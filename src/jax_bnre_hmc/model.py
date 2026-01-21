@@ -27,17 +27,18 @@ class RatioEstimatorMLP(nn.Module):
     hidden_dims: tuple[int, ...] = (50, 50, 50)
     activation: str = "tanh"
 
+    def setup(self):
+        self.act = get_activation(self.activation)
+
     @nn.compact
     def __call__(self, theta: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
         # Expect theta: (B, theta_dim), x: (B, x_dim)
         z = jnp.concatenate([theta, x], axis=-1)
-        act = get_activation(self.activation)
 
         h = z
         for d in self.hidden_dims:
             h = nn.Dense(d)(h)
-            h = act(h)
+            h = self.act(h)
 
         logit = nn.Dense(1)(h)  # (B, 1)
         return jnp.squeeze(logit, axis=-1)  # (B,)
-
