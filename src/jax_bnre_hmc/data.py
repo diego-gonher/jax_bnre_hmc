@@ -58,3 +58,33 @@ def make_joint_and_marginal(
     perm = _derangement(key, n)
     x_marg = x[perm]
     return Batch(theta=theta, x=x), Batch(theta=theta, x=x_marg)
+
+
+def make_batches(
+    rng: jax.Array,
+    theta: jnp.ndarray,
+    x: jnp.ndarray,
+    batch_size: int,
+):
+    """
+    Shuffles data and yields mini-batches.
+    Drops remainder to keep shapes static.
+    
+    Args:
+        rng: Random key for shuffling
+        theta: Parameter array of shape (n, theta_dim)
+        x: Observation array of shape (n, x_dim)
+        batch_size: Size of each batch
+        
+    Yields:
+        (theta_batch, x_batch): Batches of shape (batch_size, ...)
+    """
+    n = theta.shape[0]
+    assert x.shape[0] == n
+
+    perm = jax.random.permutation(rng, n)
+
+    n_batches = n // batch_size
+    for i in range(n_batches):
+        idx = perm[i * batch_size : (i + 1) * batch_size]
+        yield theta[idx], x[idx]

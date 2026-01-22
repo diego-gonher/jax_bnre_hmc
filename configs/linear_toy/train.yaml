@@ -28,4 +28,5 @@ model:
 train:
   lr: 0.0005
   epochs: 1000
+  batch_size: 256
   print_every: 50

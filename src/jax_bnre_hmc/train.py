@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import optax
 from flax.training import train_state
 
-from .data import make_joint_and_marginal
+from .data import make_batches, make_joint_and_marginal
 from .loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from .model import RatioEstimatorMLP
 
@@ -18,6 +18,7 @@ class TrainConfig:
     seed: int = 0
     lr: float = 1e-3
     epochs: int = 2000
+    batch_size: int = 1024
     print_every: int = 200
 
 
@@ -56,7 +57,7 @@ def train_step(
     rng: jax.Array,
 ) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray]:
     """
-    One gradient step on the full (theta, x) dataset (v0: no minibatching).
+    One gradient step on a batch of (theta, x) data.
     Deterministic given rng.
     """
     rng_shuffle, _ = jax.random.split(rng)
@@ -108,15 +109,16 @@ def train(
     cfg: TrainConfig = TrainConfig(),
 ) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
-    Fixed-epoch training loop (v0).
-    Uses full-batch training: each epoch uses the entire dataset.
+    Fixed-epoch training loop with mini-batching.
+    Each epoch processes the dataset in batches with shuffling.
+    Drops remainder examples to keep batch shapes static.
     
     Returns:
         state: Final training state
-        train_losses: Training losses per epoch
-        train_bce_losses: Training BCE losses per epoch
-        val_losses: Validation losses per epoch
-        val_bce_losses: Validation BCE losses per epoch
+        train_losses: Training losses per epoch (averaged over batches)
+        train_bce_losses: Training BCE losses per epoch (averaged over batches)
+        val_losses: Validation losses per epoch (averaged over batches)
+        val_bce_losses: Validation BCE losses per epoch (averaged over batches)
     """
     theta_train = jnp.asarray(theta_train, dtype=jnp.float32)
     x_train = jnp.asarray(x_train, dtype=jnp.float32)
@@ -142,13 +144,24 @@ def train(
     val_bce_losses = []
     
     for epoch in range(cfg.epochs):
-        # Training step
-        rng_train, rng_step = jax.random.split(rng_train)
-        state, train_loss, train_bce_loss = train_step(state, theta_train, x_train, rng_step)
+        # Training: iterate over batches
+        rng_train, rng_epoch = jax.random.split(rng_train)
+        epoch_train_losses = []
+        epoch_train_bce_losses = []
+        
+        for theta_batch, x_batch in make_batches(rng_epoch, theta_train, x_train, cfg.batch_size):
+            rng_train, rng_step = jax.random.split(rng_train)
+            state, batch_loss, batch_bce_loss = train_step(state, theta_batch, x_batch, rng_step)
+            epoch_train_losses.append(batch_loss)
+            epoch_train_bce_losses.append(batch_bce_loss)
+        
+        # Average losses over batches for this epoch
+        train_loss = jnp.mean(jnp.stack(epoch_train_losses))
+        train_bce_loss = jnp.mean(jnp.stack(epoch_train_bce_losses))
         train_losses.append(train_loss)
         train_bce_losses.append(train_bce_loss)
 
-        # Validation step
+        # Validation step (no mini-batching)
         rng_val, rng_val_step = jax.random.split(rng_val)
         val_loss, val_bce_loss = validation_step(state, theta_val, x_val, rng_val_step)
         val_losses.append(val_loss)

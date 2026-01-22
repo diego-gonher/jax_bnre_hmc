@@ -77,6 +77,7 @@ def main(cfg: DictConfig):
         lr=float(cfg.train.lr),
         epochs=int(cfg.train.epochs),
         print_every=int(cfg.train.print_every),
+        batch_size=int(cfg.train.batch_size),
     )
 
     train_output = train(
