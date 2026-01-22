@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from jax_bnre_hmc.train import TrainConfig, train
 from jax_bnre_hmc.data import make_joint_and_marginal
 
+
 def simulate_linear_dataset(
     key: jax.Array,
     n: int,
@@ -72,7 +73,7 @@ def main(cfg: DictConfig):
         print_every=int(cfg.train.print_every),
     )
 
-    state, losses = train(
+    state, losses, bce_losses = train(
         theta=theta,
         x=x,
         model_hidden_dims=tuple(cfg.model.hidden_dims),
@@ -89,6 +90,8 @@ def main(cfg: DictConfig):
 
     # Basic sanity prints
     print("done. final loss:", float(losses[-1]))
+    print("done. final bce :", float(bce_losses[-1]))
+
     # Evaluate mean logit on joint vs marginal for a quick sanity check
     # (higher on joint is a good sign)
     key2 = jax.random.PRNGKey(int(cfg.seed) + 1)
@@ -105,16 +108,17 @@ def main(cfg: DictConfig):
 
     # Save the metrics in a txt file
     (run_dir / "metrics.txt").write_text(
-    f"final_loss: {float(losses[-1])}\n"
-    f"mean_logit_joint: {float(jnp.mean(lj))}\n"
-    f"mean_logit_marginal: {float(jnp.mean(lm))}\n"
-    f"mean_sigmoid_joint: {float(jnp.mean(pj))}\n"
-    f"mean_sigmoid_marginal: {float(jnp.mean(pm))}\n"
+        f"final_loss: {float(losses[-1])}\n"
+        f"final_bce_style_loss: {float(bce_losses[-1])}\n"
+        f"mean_logit_joint: {float(jnp.mean(lj))}\n"
+        f"mean_logit_marginal: {float(jnp.mean(lm))}\n"
+        f"mean_sigmoid_joint: {float(jnp.mean(pj))}\n"
+        f"mean_sigmoid_marginal: {float(jnp.mean(pm))}\n"
     )
-
 
     plt.figure(figsize=(10, 5))
     plt.plot(losses, label="loss")
+    plt.plot(bce_losses, label="bce_style_loss")
     plt.legend()
     plt.savefig(run_dir / "losses.png", dpi=150, bbox_inches="tight")
     plt.close()
@@ -125,7 +129,6 @@ def main(cfg: DictConfig):
     plt.legend()
     plt.savefig(run_dir / "sigmoid.png", dpi=150, bbox_inches="tight")
     plt.close()
-
 
 
 if __name__ == "__main__":

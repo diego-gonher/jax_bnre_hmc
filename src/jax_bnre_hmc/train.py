@@ -9,7 +9,7 @@ import optax
 from flax.training import train_state
 
 from .data import make_joint_and_marginal
-from .loss import nre_loss
+from .loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from .model import RatioEstimatorMLP
 
 
@@ -53,7 +53,7 @@ def train_step(
     theta: jnp.ndarray,
     x: jnp.ndarray,
     rng: jax.Array,
-) -> tuple[train_state.TrainState, jnp.ndarray]:
+) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray]:
     """
     One gradient step on the full (theta, x) dataset (v0: no minibatching).
     Deterministic given rng.
@@ -61,21 +61,26 @@ def train_step(
     rng_shuffle, _ = jax.random.split(rng)
     joint, marginal = make_joint_and_marginal(rng_shuffle, theta, x)
 
-    def loss_fn(params):
-        return nre_loss(state.apply_fn, params, joint, marginal)
+    def loss_and_metric(params):
+        logits_joint = state.apply_fn(params, joint.theta, joint.x)
+        logits_marg = state.apply_fn(params, marginal.theta, marginal.x)
 
-    loss, grads = jax.value_and_grad(loss_fn)(state.params)
+        loss = nre_loss_from_logits(logits_joint, logits_marg)
+        bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
+        return loss, bce_loss
+
+    (loss, bce_loss), grads = jax.value_and_grad(loss_and_metric, has_aux=True)(state.params)
     state = state.apply_gradients(grads=grads)
-    return state, loss
+    return state, loss, bce_loss
 
 
 def train(
     theta: jnp.ndarray,
     x: jnp.ndarray,
-    model_hidden_dims: Sequence[int] = (50, 50, 50),
+    model_hidden_dims: Sequence[int],
     model_activation: str = "tanh",
     cfg: TrainConfig = TrainConfig(),
-) -> tuple[train_state.TrainState, jnp.ndarray]:
+) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray]:
     """
     Fixed-epoch training loop (v0).
     Uses full-batch training: each epoch uses the entire dataset.
@@ -96,12 +101,14 @@ def train(
     )
 
     losses = []
+    bce_losses = []
     for epoch in range(cfg.epochs):
         rng_loop, rng_step = jax.random.split(rng_loop)
-        state, loss = train_step(state, theta, x, rng_step)
+        state, loss, bce_loss = train_step(state, theta, x, rng_step)
         losses.append(loss)
+        bce_losses.append(bce_loss)
 
         if (epoch + 1) % cfg.print_every == 0:
-            print(f"epoch {epoch+1:5d} | loss {float(loss):.6f}")
+            print(f"epoch {epoch+1:5d} | loss {float(loss):.6f} | bce {float(bce_loss):.6f}")
 
-    return state, jnp.stack(losses)
+    return state, jnp.stack(losses), jnp.stack(bce_losses)
