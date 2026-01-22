@@ -75,43 +75,96 @@ def train_step(
     return state, loss, bce_loss
 
 
-def train(
+@jax.jit
+def validation_step(
+    state: train_state.TrainState,
     theta: jnp.ndarray,
     x: jnp.ndarray,
+    rng: jax.Array,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Compute validation losses without gradients.
+    Deterministic given rng.
+    """
+    rng_shuffle, _ = jax.random.split(rng)
+    joint, marginal = make_joint_and_marginal(rng_shuffle, theta, x)
+
+    logits_joint = state.apply_fn(state.params, joint.theta, joint.x)
+    logits_marg = state.apply_fn(state.params, marginal.theta, marginal.x)
+
+    loss = nre_loss_from_logits(logits_joint, logits_marg)
+    bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
+    return loss, bce_loss
+
+
+def train(
+    theta_train: jnp.ndarray,
+    x_train: jnp.ndarray,
+    theta_val: jnp.ndarray,
+    x_val: jnp.ndarray,
     model_hidden_dims: Sequence[int],
     model_activation: str = "tanh",
     model_norm: str = "layernorm",
     cfg: TrainConfig = TrainConfig(),
-) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray]:
+) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Fixed-epoch training loop (v0).
     Uses full-batch training: each epoch uses the entire dataset.
+    
+    Returns:
+        state: Final training state
+        train_losses: Training losses per epoch
+        train_bce_losses: Training BCE losses per epoch
+        val_losses: Validation losses per epoch
+        val_bce_losses: Validation BCE losses per epoch
     """
-    theta = jnp.asarray(theta, dtype=jnp.float32)
-    x = jnp.asarray(x, dtype=jnp.float32)
+    theta_train = jnp.asarray(theta_train, dtype=jnp.float32)
+    x_train = jnp.asarray(x_train, dtype=jnp.float32)
+    theta_val = jnp.asarray(theta_val, dtype=jnp.float32)
+    x_val = jnp.asarray(x_val, dtype=jnp.float32)
 
     rng = jax.random.PRNGKey(cfg.seed)
-    rng_init, rng_loop = jax.random.split(rng)
+    rng_init, rng_train, rng_val = jax.random.split(rng, 3)
 
     _, state = create_train_state(
         rng=rng_init,
-        theta_dim=theta.shape[1],
-        x_dim=x.shape[1],
+        theta_dim=theta_train.shape[1],
+        x_dim=x_train.shape[1],
         hidden_dims=model_hidden_dims,
         activation=model_activation,
         norm=model_norm,
         lr=cfg.lr,
     )
 
-    losses = []
-    bce_losses = []
+    train_losses = []
+    train_bce_losses = []
+    val_losses = []
+    val_bce_losses = []
+    
     for epoch in range(cfg.epochs):
-        rng_loop, rng_step = jax.random.split(rng_loop)
-        state, loss, bce_loss = train_step(state, theta, x, rng_step)
-        losses.append(loss)
-        bce_losses.append(bce_loss)
+        # Training step
+        rng_train, rng_step = jax.random.split(rng_train)
+        state, train_loss, train_bce_loss = train_step(state, theta_train, x_train, rng_step)
+        train_losses.append(train_loss)
+        train_bce_losses.append(train_bce_loss)
+
+        # Validation step
+        rng_val, rng_val_step = jax.random.split(rng_val)
+        val_loss, val_bce_loss = validation_step(state, theta_val, x_val, rng_val_step)
+        val_losses.append(val_loss)
+        val_bce_losses.append(val_bce_loss)
 
         if (epoch + 1) % cfg.print_every == 0:
-            print(f"epoch {epoch+1:5d} | loss {float(loss):.6f} | bce {float(bce_loss):.6f}")
+            print(
+                f"epoch {epoch+1:5d} | "
+                f"train_loss {float(train_loss):.6f} | train_bce {float(train_bce_loss):.6f} | "
+                f"val_loss {float(val_loss):.6f} | val_bce {float(val_bce_loss):.6f}"
+            )
 
-    return state, jnp.stack(losses), jnp.stack(bce_losses)
+    return (
+        state,
+        jnp.stack(train_losses),
+        jnp.stack(train_bce_losses),
+        jnp.stack(val_losses),
+        jnp.stack(val_bce_losses),
+    )

@@ -18,6 +18,7 @@ data:
   n_simulations: 2048
   n_points: 10
   sigma: 0.1
+  validation_fraction: 0.2
 
 model:
   hidden_dims: [50, 50, 50]

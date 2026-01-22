@@ -9,6 +9,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 from omegaconf import DictConfig, OmegaConf
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 from jax_bnre_hmc.train import TrainConfig, train
@@ -52,8 +53,10 @@ def simulate_linear_dataset(
 
 @hydra.main(config_path="../../configs/linear_toy", config_name="train", version_base="1.3")
 def main(cfg: DictConfig):
+    # Set the seed
     key = jax.random.PRNGKey(int(cfg.seed))
 
+    # Simulate the full dataset
     theta, x = simulate_linear_dataset(
         key=key,
         n=int(cfg.data.n_simulations),
@@ -65,6 +68,10 @@ def main(cfg: DictConfig):
         b_high=float(cfg.prior.b_high),
     )
 
+    # Split the dataset into train and validation sets
+    theta_train, theta_val, x_train, x_val = train_test_split(theta, x, test_size=float(cfg.data.validation_fraction), random_state=int(cfg.seed))
+
+
     train_cfg = TrainConfig(
         seed=int(cfg.seed),
         lr=float(cfg.train.lr),
@@ -72,14 +79,18 @@ def main(cfg: DictConfig):
         print_every=int(cfg.train.print_every),
     )
 
-    state, losses, bce_losses = train(
-        theta=theta,
-        x=x,
+    train_output = train(
+        theta_train=theta_train,
+        x_train=x_train,
+        theta_val=theta_val,
+        x_val=x_val,
         model_hidden_dims=tuple(cfg.model.hidden_dims),
         model_activation=str(cfg.model.activation),
         model_norm=str(cfg.model.norm),
         cfg=train_cfg,
     )
+
+    state, train_losses, train_bce_losses, val_losses, val_bce_losses = train_output
 
     # Output directory
     run_dir = Path(HydraConfig.get().run.dir).resolve()
@@ -89,8 +100,10 @@ def main(cfg: DictConfig):
     (run_dir / "config.yaml").write_text(OmegaConf.to_yaml(cfg))
 
     # Basic sanity prints
-    print("done. final loss:", float(losses[-1]))
-    print("done. final bce :", float(bce_losses[-1]))
+    print("done. final train loss:", float(train_losses[-1]))
+    print("done. final train bce :", float(train_bce_losses[-1]))
+    print("done. final val loss:", float(val_losses[-1]))
+    print("done. final val bce :", float(val_bce_losses[-1]))
 
     # Evaluate mean logit on joint vs marginal for a quick sanity check
     # (higher on joint is a good sign)
@@ -108,8 +121,10 @@ def main(cfg: DictConfig):
 
     # Save the metrics in a txt file
     (run_dir / "metrics.txt").write_text(
-        f"final_loss: {float(losses[-1])}\n"
-        f"final_bce_style_loss: {float(bce_losses[-1])}\n"
+        f"final_train_loss: {float(train_losses[-1])}\n"
+        f"final_val_loss: {float(val_losses[-1])}\n"
+        f"final_train_bce_style_loss: {float(train_bce_losses[-1])}\n"
+        f"final_val_bce_style_loss: {float(val_bce_losses[-1])}\n"
         f"mean_logit_joint: {float(jnp.mean(lj))}\n"
         f"mean_logit_marginal: {float(jnp.mean(lm))}\n"
         f"mean_sigmoid_joint: {float(jnp.mean(pj))}\n"
@@ -117,10 +132,17 @@ def main(cfg: DictConfig):
     )
 
     plt.figure(figsize=(10, 5))
-    plt.plot(losses, label="loss")
-    plt.plot(bce_losses, label="bce_style_loss")
+    plt.plot(train_losses, label="train_loss")
+    plt.plot(val_losses, label="val_loss")
     plt.legend()
     plt.savefig(run_dir / "losses.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_bce_losses, label="train_bce_style_loss")
+    plt.plot(val_bce_losses, label="val_bce_style_loss")
+    plt.legend()
+    plt.savefig(run_dir / "bce_style_losses.png", dpi=150, bbox_inches="tight")
     plt.close()
 
     plt.figure(figsize=(10, 5))
