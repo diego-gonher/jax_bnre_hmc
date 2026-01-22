@@ -4,6 +4,7 @@ import hydra
 import jax
 import jax.numpy as jnp
 from omegaconf import DictConfig
+import matplotlib.pyplot as plt
 
 from jax_bnre_hmc.train import TrainConfig, train
 
@@ -86,6 +87,24 @@ def main(cfg: DictConfig):
     lm = state.apply_fn(state.params, marginal.theta, marginal.x)
     print("mean(logit) joint   :", float(jnp.mean(lj)))
     print("mean(logit) marginal:", float(jnp.mean(lm)))
+
+    pj = jax.nn.sigmoid(lj)
+    pm = jax.nn.sigmoid(lm)
+    print("mean(sigmoid) joint   :", float(jnp.mean(pj)))
+    print("mean(sigmoid) marginal:", float(jnp.mean(pm)))
+
+    # Plot the losses
+    plt.figure(figsize=(10, 5))
+    plt.plot(losses, label="loss")
+    plt.legend()
+    plt.show()
+
+    # Plot the sigmoid of the logits
+    plt.figure(figsize=(10, 5))
+    plt.plot(pj, label="joint")
+    plt.plot(pm, label="marginal")
+    plt.legend()
+    plt.show()
 
 
 if __name__ == "__main__":

@@ -33,12 +33,15 @@ def create_train_state(
     Initialize model + TrainState (params + optimizer).
     Returns the model (to use its apply_fn) and the TrainState.
     """
-    model = RatioEstimatorMLP(hidden_dims=tuple(hidden_dims), activation=activation)
+    hidden_dims = tuple(int(d) for d in hidden_dims)  # Ensure tuple of ints
+    model = RatioEstimatorMLP(hidden_dims=hidden_dims, activation=activation)
 
+    # Create dummy data to initialize parameters
     dummy_theta = jnp.zeros((1, theta_dim), dtype=jnp.float32)
     dummy_x = jnp.zeros((1, x_dim), dtype=jnp.float32)
     params = model.init(rng, dummy_theta, dummy_x)
 
+    # Create optimizer
     tx = optax.adam(lr)
     state = train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
     return model, state
