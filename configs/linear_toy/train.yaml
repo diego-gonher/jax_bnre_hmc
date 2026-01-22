@@ -1,3 +1,11 @@
+exp_name: linear_toy
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+
 seed: 0
 
 prior:
@@ -12,7 +20,7 @@ data:
   sigma: 0.1
 
 model:
-  hidden_dims: [50, 50, 50]
+  hidden_dims: [50, 50, 50, 50]
   activation: tanh
 
 train:

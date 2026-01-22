@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 
 from jax_bnre_hmc.train import TrainConfig, train
 
+import os
+os.environ["JAX_PLATFORMS"] = "cpu"
 
 def simulate_linear_dataset(
     key: jax.Array,
@@ -97,14 +99,14 @@ def main(cfg: DictConfig):
     plt.figure(figsize=(10, 5))
     plt.plot(losses, label="loss")
     plt.legend()
-    plt.show()
+    plt.savefig("losses.png")
 
     # Plot the sigmoid of the logits
     plt.figure(figsize=(10, 5))
     plt.plot(pj, label="joint")
     plt.plot(pm, label="marginal")
     plt.legend()
-    plt.show()
+    plt.savefig("sigmoid.png")
 
 
 if __name__ == "__main__":

@@ -11,3 +11,4 @@ build/
 outputs/
 .multirun/
 
+.DS_Store
