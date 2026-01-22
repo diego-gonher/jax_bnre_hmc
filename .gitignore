@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Packaging / editable installs
+*.egg-info/
+dist/
+build/
+
+# Hydra outputs (when you run experiments)
+outputs/
+.multirun/
+

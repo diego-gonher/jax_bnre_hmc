@@ -1,3 +1,6 @@
+# Development environment for jax-bnre-hmc
+# Not required for installation; see pyproject.toml for runtime deps
+
 name: jax_bnre
 channels:
   - defaults
