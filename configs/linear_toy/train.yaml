@@ -1,0 +1,21 @@
+seed: 0
+
+prior:
+  m_low: 0.0
+  m_high: 1.0
+  b_low: 0.0
+  b_high: 1.0
+
+data:
+  n_simulations: 256
+  n_points: 10
+  sigma: 0.1
+
+model:
+  hidden_dims: (50, 50, 50)
+  activation: tanh
+
+train:
+  lr: 0.0005
+  epochs: 200
+  print_every: 10
