@@ -23,8 +23,7 @@ def simulate_linear_dataset(
     m_low: float,
     m_high: float,
     b_low: float,
-    b_high: float,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+    b_high: float) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Simulator:
       y = m * x + b + Normal(0, sigma)
@@ -78,6 +77,7 @@ def main(cfg: DictConfig):
         x=x,
         model_hidden_dims=tuple(cfg.model.hidden_dims),
         model_activation=str(cfg.model.activation),
+        model_norm=str(cfg.model.norm),
         cfg=train_cfg,
     )
 

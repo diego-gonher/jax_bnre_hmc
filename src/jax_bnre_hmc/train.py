@@ -27,6 +27,7 @@ def create_train_state(
     x_dim: int,
     hidden_dims: Sequence[int],
     activation: str,
+    norm: str,
     lr: float,
 ) -> tuple[RatioEstimatorMLP, train_state.TrainState]:
     """
@@ -34,7 +35,7 @@ def create_train_state(
     Returns the model (to use its apply_fn) and the TrainState.
     """
     hidden_dims = tuple(int(d) for d in hidden_dims)  # Ensure tuple of ints
-    model = RatioEstimatorMLP(hidden_dims=hidden_dims, activation=activation)
+    model = RatioEstimatorMLP(hidden_dims=hidden_dims, activation=activation, norm=norm)
 
     # Create dummy data to initialize parameters
     dummy_theta = jnp.zeros((1, theta_dim), dtype=jnp.float32)
@@ -79,6 +80,7 @@ def train(
     x: jnp.ndarray,
     model_hidden_dims: Sequence[int],
     model_activation: str = "tanh",
+    model_norm: str = "layernorm",
     cfg: TrainConfig = TrainConfig(),
 ) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray]:
     """
@@ -97,6 +99,7 @@ def train(
         x_dim=x.shape[1],
         hidden_dims=model_hidden_dims,
         activation=model_activation,
+        norm=model_norm,
         lr=cfg.lr,
     )
 

@@ -26,6 +26,7 @@ class RatioEstimatorMLP(nn.Module):
     """f(theta, x) -> logit using an MLP over concat(theta, x)."""
     hidden_dims: tuple[int, ...] = (50, 50, 50)
     activation: str = "tanh"
+    norm: str = "layernorm"   # "layernorm" or "none"
 
     def setup(self):
         self.act = get_activation(self.activation)
@@ -38,6 +39,8 @@ class RatioEstimatorMLP(nn.Module):
         h = z
         for d in self.hidden_dims:
             h = nn.Dense(d)(h)
+            if self.norm == "layernorm":
+                h = nn.LayerNorm()(h)
             h = self.act(h)
 
         logit = nn.Dense(1)(h)  # (B, 1)
