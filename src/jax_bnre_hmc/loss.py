@@ -15,11 +15,11 @@ def nre_loss_from_logits(logits_joint: jnp.ndarray, logits_marginal: jnp.ndarray
     return jnp.mean(jax.nn.softplus(-logits_joint)) + jnp.mean(jax.nn.softplus(logits_marginal))
 
 
-def nre_loss(model, params, joint: Batch, marginal: Batch) -> jnp.ndarray:
+def nre_loss(apply_fn, params, joint: Batch, marginal: Batch) -> jnp.ndarray:
     """
-    NRE loss function to be applied to a given model (estimator)
+    NRE loss function to be applied to a given forward pass from a model (estimator).
 
     """
-    logits_joint = model.apply(params, joint.theta, joint.x)
-    logits_marg = model.apply(params, marginal.theta, marginal.x)
+    logits_joint = apply_fn(params, joint.theta, joint.x)
+    logits_marg = apply_fn(params, marginal.theta, marginal.x)
     return nre_loss_from_logits(logits_joint, logits_marg)
