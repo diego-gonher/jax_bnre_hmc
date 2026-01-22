@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+import os
+os.environ["JAX_PLATFORMS"] = "cpu"
+
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from pathlib import Path
 import jax
 import jax.numpy as jnp
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import matplotlib.pyplot as plt
 
 from jax_bnre_hmc.train import TrainConfig, train
 from jax_bnre_hmc.data import make_joint_and_marginal
-
-import os
-os.environ["JAX_PLATFORMS"] = "cpu"
 
 def simulate_linear_dataset(
     key: jax.Array,
@@ -81,8 +81,11 @@ def main(cfg: DictConfig):
     )
 
     # Output directory
-    run_dir = Path(HydraConfig.get().run.dir)
+    run_dir = Path(HydraConfig.get().run.dir).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save config in output directory
+    (run_dir / "config.yaml").write_text(OmegaConf.to_yaml(cfg))
 
     # Basic sanity prints
     print("done. final loss:", float(losses[-1]))
@@ -99,6 +102,16 @@ def main(cfg: DictConfig):
     pm = jax.nn.sigmoid(lm)
     print("mean(sigmoid) joint   :", float(jnp.mean(pj)))
     print("mean(sigmoid) marginal:", float(jnp.mean(pm)))
+
+    # Save the metrics in a txt file
+    (run_dir / "metrics.txt").write_text(
+    f"final_loss: {float(losses[-1])}\n"
+    f"mean_logit_joint: {float(jnp.mean(lj))}\n"
+    f"mean_logit_marginal: {float(jnp.mean(lm))}\n"
+    f"mean_sigmoid_joint: {float(jnp.mean(pj))}\n"
+    f"mean_sigmoid_marginal: {float(jnp.mean(pm))}\n"
+    )
+
 
     plt.figure(figsize=(10, 5))
     plt.plot(losses, label="loss")
