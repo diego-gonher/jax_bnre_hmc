@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hydra
+from hydra.core.hydra_config import HydraConfig
+from pathlib import Path
 import jax
 import jax.numpy as jnp
 from omegaconf import DictConfig
 import matplotlib.pyplot as plt
 
 from jax_bnre_hmc.train import TrainConfig, train
+from jax_bnre_hmc.data import make_joint_and_marginal
 
 import os
 os.environ["JAX_PLATFORMS"] = "cpu"
@@ -77,12 +80,14 @@ def main(cfg: DictConfig):
         cfg=train_cfg,
     )
 
+    # Output directory
+    run_dir = Path(HydraConfig.get().run.dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+
     # Basic sanity prints
     print("done. final loss:", float(losses[-1]))
     # Evaluate mean logit on joint vs marginal for a quick sanity check
     # (higher on joint is a good sign)
-    from jax_bnre_hmc.data import make_joint_and_marginal
-
     key2 = jax.random.PRNGKey(int(cfg.seed) + 1)
     joint, marginal = make_joint_and_marginal(key2, theta, x)
     lj = state.apply_fn(state.params, joint.theta, joint.x)
@@ -95,18 +100,19 @@ def main(cfg: DictConfig):
     print("mean(sigmoid) joint   :", float(jnp.mean(pj)))
     print("mean(sigmoid) marginal:", float(jnp.mean(pm)))
 
-    # Plot the losses
     plt.figure(figsize=(10, 5))
     plt.plot(losses, label="loss")
     plt.legend()
-    plt.savefig("losses.png")
+    plt.savefig(run_dir / "losses.png", dpi=150, bbox_inches="tight")
+    plt.close()
 
-    # Plot the sigmoid of the logits
     plt.figure(figsize=(10, 5))
     plt.plot(pj, label="joint")
     plt.plot(pm, label="marginal")
     plt.legend()
-    plt.savefig("sigmoid.png")
+    plt.savefig(run_dir / "sigmoid.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
 
 
 if __name__ == "__main__":
