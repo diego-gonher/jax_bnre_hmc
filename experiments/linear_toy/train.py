@@ -84,6 +84,7 @@ def main(cfg: DictConfig):
         seed=int(cfg.seed),
         lr=float(cfg.train.lr),
         epochs=int(cfg.train.epochs),
+        bnre_lambda=float(cfg.train.bnre_lambda),
         print_every=int(cfg.train.print_every),
         batch_size=int(cfg.train.batch_size),
         clip_max_norm=cfg.train.clip_max_norm,

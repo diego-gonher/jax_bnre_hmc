@@ -10,7 +10,7 @@ from flax.training import train_state
 
 from .checkpointing import ensure_dirs, get_run_dir, save_best, save_latest
 from .data import make_batches, make_joint_and_marginal
-from .loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
+from .loss import bnre_balance_from_logits, nre_loss_bce_style_from_logits, nre_loss_from_logits
 from .model import RatioEstimatorMLP
 
 
@@ -24,6 +24,7 @@ class TrainConfig:
     print_every: int = 200
     save_every: int = 200
     checkpoint_dirname: str = "checkpoints"
+    bnre_lambda: float = 100.0
 
 
 def create_train_state(
@@ -66,7 +67,8 @@ def train_step(
     theta: jnp.ndarray,
     x: jnp.ndarray,
     rng: jax.Array,
-) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray]:
+    bnre_lambda: float,
+) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     One gradient step on a batch of (theta, x) data.
     Deterministic given rng.
@@ -78,13 +80,19 @@ def train_step(
         logits_joint = state.apply_fn(params, joint.theta, joint.x)
         logits_marg = state.apply_fn(params, marginal.theta, marginal.x)
 
-        loss = nre_loss_from_logits(logits_joint, logits_marg)
+        nre_loss = nre_loss_from_logits(logits_joint, logits_marg)
         bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
-        return loss, bce_loss
+        penalty, balance = bnre_balance_from_logits(logits_joint, logits_marg)
+        
+        # Always compute total_loss = nre_loss + bnre_lambda * penalty
+        # When bnre_lambda == 0.0, this equals nre_loss exactly
+        total_loss = nre_loss + bnre_lambda * penalty
+        
+        return total_loss, (bce_loss, penalty, balance)
 
-    (loss, bce_loss), grads = jax.value_and_grad(loss_and_metric, has_aux=True)(state.params)
+    (total_loss, (bce_loss, penalty, balance)), grads = jax.value_and_grad(loss_and_metric, has_aux=True)(state.params)
     state = state.apply_gradients(grads=grads)
-    return state, loss, bce_loss
+    return state, total_loss, bce_loss, penalty, balance
 
 
 @jax.jit
@@ -93,7 +101,8 @@ def validation_step(
     theta: jnp.ndarray,
     x: jnp.ndarray,
     rng: jax.Array,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+    bnre_lambda: float,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Compute validation losses without gradients.
     Deterministic given rng.
@@ -104,9 +113,15 @@ def validation_step(
     logits_joint = state.apply_fn(state.params, joint.theta, joint.x)
     logits_marg = state.apply_fn(state.params, marginal.theta, marginal.x)
 
-    loss = nre_loss_from_logits(logits_joint, logits_marg)
+    nre_loss = nre_loss_from_logits(logits_joint, logits_marg)
     bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
-    return loss, bce_loss
+    penalty, balance = bnre_balance_from_logits(logits_joint, logits_marg)
+    
+    # Always compute total_loss = nre_loss + bnre_lambda * penalty
+    # When bnre_lambda == 0.0, this equals nre_loss exactly
+    total_loss = nre_loss + bnre_lambda * penalty
+    
+    return total_loss, bce_loss, penalty, balance
 
 
 def train(
@@ -167,24 +182,34 @@ def train(
         rng_train, rng_epoch = jax.random.split(rng_train)
         epoch_train_losses = []
         epoch_train_bce_losses = []
+        epoch_train_penalties = []
+        epoch_train_balances = []
         
         for theta_batch, x_batch in make_batches(rng_epoch, theta_train, x_train, cfg.batch_size):
             rng_train, rng_step = jax.random.split(rng_train)
-            state, batch_loss, batch_bce_loss = train_step(state, theta_batch, x_batch, rng_step)
+            state, batch_loss, batch_bce_loss, batch_penalty, batch_balance = train_step(
+                state, theta_batch, x_batch, rng_step, cfg.bnre_lambda
+            )
             epoch_train_losses.append(batch_loss)
             epoch_train_bce_losses.append(batch_bce_loss)
+            epoch_train_penalties.append(batch_penalty)
+            epoch_train_balances.append(batch_balance)
         
         # Average losses over batches for this epoch
         train_loss = jnp.mean(jnp.stack(epoch_train_losses))
         train_bce_loss = jnp.mean(jnp.stack(epoch_train_bce_losses))
+        train_penalty = jnp.mean(jnp.stack(epoch_train_penalties))
+        train_balance = jnp.mean(jnp.stack(epoch_train_balances))
         train_losses.append(train_loss)
         train_bce_losses.append(train_bce_loss)
 
         # Validation step (no mini-batching)
         rng_val, rng_val_step = jax.random.split(rng_val)
-        val_loss, val_bce_loss = validation_step(state, theta_val, x_val, rng_val_step)
+        val_loss, val_bce_loss, val_penalty, val_balance = validation_step(
+            state, theta_val, x_val, rng_val_step, cfg.bnre_lambda
+        )
         # val_key_fixed = jax.random.PRNGKey(cfg.seed + 117)  # this is to verify the best model
-        # val_loss, val_bce_loss = validation_step(state, theta_val, x_val, val_key_fixed)  # this is to verify the best model
+        # val_loss, val_bce_loss, val_penalty, val_balance = validation_step(state, theta_val, x_val, val_key_fixed, cfg.bnre_lambda)  # this is to verify the best model
         val_losses.append(val_loss)
         val_bce_losses.append(val_bce_loss)
         
@@ -200,11 +225,19 @@ def train(
             save_best(state.params, best_dir, best_meta_path, epoch + 1, val_loss_float)
 
         if (epoch + 1) % cfg.print_every == 0:
-            print(
-                f"epoch {epoch+1:5d} | "
-                f"train_loss {float(train_loss):.6f} | train_bce {float(train_bce_loss):.6f} | "
-                f"val_loss {val_loss_float:.6f} | val_bce {float(val_bce_loss):.6f}"
-            )
+            if cfg.bnre_lambda > 0.0:
+                print(
+                    f"epoch {epoch+1:5d} | "
+                    f"train_loss {float(train_loss):.6f} | train_bce {float(train_bce_loss):.6f} | "
+                    f"val_loss {val_loss_float:.6f} | val_bce {float(val_bce_loss):.6f} | "
+                    f"balance {float(train_balance):.6f} | penalty {float(train_penalty):.6e}"
+                )
+            else:
+                print(
+                    f"epoch {epoch+1:5d} | "
+                    f"train_loss {float(train_loss):.6f} | train_bce {float(train_bce_loss):.6f} | "
+                    f"val_loss {val_loss_float:.6f} | val_bce {float(val_bce_loss):.6f}"
+                )
 
     return (
         state,

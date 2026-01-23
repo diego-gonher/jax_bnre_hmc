@@ -33,3 +33,18 @@ def nre_loss_bce_style_from_logits(logits_joint: jnp.ndarray, logits_marg: jnp.n
         [jnp.ones_like(logits_joint), jnp.zeros_like(logits_marg)], axis=0
     )
     return jnp.mean(optax.sigmoid_binary_cross_entropy(logits, labels))
+
+
+def bnre_balance_from_logits(logits_joint: jnp.ndarray, logits_marg: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Compute BNRE balance penalty from logits.
+    
+    Returns:
+        penalty: (balance - 1.0)^2 where balance = mean(sigmoid(logits_joint)) + mean(sigmoid(logits_marg))
+        balance: mean(sigmoid(logits_joint)) + mean(sigmoid(logits_marg))
+    """
+    d_joint = jax.nn.sigmoid(logits_joint)
+    d_marg = jax.nn.sigmoid(logits_marg)
+    balance = jnp.mean(d_joint) + jnp.mean(d_marg)
+    penalty = (balance - 1.0) ** 2
+    return penalty, balance
