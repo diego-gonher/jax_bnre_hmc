@@ -183,8 +183,8 @@ def train(
         # Validation step (no mini-batching)
         rng_val, rng_val_step = jax.random.split(rng_val)
         val_loss, val_bce_loss = validation_step(state, theta_val, x_val, rng_val_step)
-        val_key_fixed = jax.random.PRNGKey(cfg.seed + 117)
-        val_loss, val_bce_loss = validation_step(state, theta_val, x_val, val_key_fixed)
+        # val_key_fixed = jax.random.PRNGKey(cfg.seed + 117)  # this is to verify the best model
+        # val_loss, val_bce_loss = validation_step(state, theta_val, x_val, val_key_fixed)  # this is to verify the best model
         val_losses.append(val_loss)
         val_bce_losses.append(val_bce_loss)
         
