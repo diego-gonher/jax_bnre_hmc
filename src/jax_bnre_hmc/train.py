@@ -24,7 +24,7 @@ class TrainConfig:
     print_every: int = 200
     save_every: int = 200
     checkpoint_dirname: str = "checkpoints"
-    bnre_lambda: float = 100.0
+    bnre_lambda: float = 10.0
 
 
 def create_train_state(
