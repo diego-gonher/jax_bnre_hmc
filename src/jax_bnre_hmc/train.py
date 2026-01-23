@@ -28,6 +28,7 @@ class TrainConfig:
         save_every: Save latest checkpoint every N epochs. If 0, latest checkpoint saving is disabled.
         checkpoint_dirname: Directory name for storing checkpoints.
         bnre_lambda: Weight for the BNRE balance penalty. Set to 0.0 for standard NRE training.
+        stop_after_epochs: Early stopping patience. Stop training if no improvement for N epochs. If None, no early stopping.
     """
     seed: int = 0
     lr: float = 1e-3
@@ -38,6 +39,7 @@ class TrainConfig:
     save_every: int = 200
     checkpoint_dirname: str = "checkpoints"
     bnre_lambda: float = 10.0
+    stop_after_epochs: int | None = None
 
 
 def create_train_state(
@@ -196,7 +198,8 @@ def train(
     Implements a fixed-epoch training loop with mini-batching. Each epoch processes
     the dataset in batches with shuffling. Remainder examples are dropped to keep
     batch shapes static for JIT compilation efficiency. Supports both NRE and BNRE
-    training based on the bnre_lambda configuration.
+    training based on the bnre_lambda configuration. Includes early stopping based
+    on validation loss improvement.
     
     Args:
         theta_train: Training parameter samples of shape (n_train, theta_dim).
@@ -240,8 +243,9 @@ def train(
     val_losses = []
     val_bce_losses = []
     
-    # Initialize checkpointing
+    # Initialize checkpointing and early stopping
     best_val_loss = float("inf")
+    best_epoch = 0
     run_dir = get_run_dir()
     latest_dir, best_dir = ensure_dirs(run_dir, cfg.checkpoint_dirname)
     latest_meta_path = run_dir / cfg.checkpoint_dirname / "latest_meta.json"
@@ -292,7 +296,13 @@ def train(
         # Checkpointing: save best
         if val_loss_float < best_val_loss:
             best_val_loss = val_loss_float
+            best_epoch = epoch + 1
             save_best(state.params, best_dir, best_meta_path, epoch + 1, val_loss_float)
+        
+        # Early stopping
+        if cfg.stop_after_epochs is not None and (epoch + 1) - best_epoch >= cfg.stop_after_epochs:
+            print(f"\nEarly stopping: No improvement for {cfg.stop_after_epochs} epochs (best at epoch {best_epoch}, current epoch {epoch+1})\n")
+            break
 
         if (epoch + 1) % cfg.print_every == 0:
             if cfg.bnre_lambda > 0.0:

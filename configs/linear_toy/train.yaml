@@ -34,3 +34,4 @@ train:
   clip_max_norm: 5.00 # null for no clipping
   save_every: 200 # save latest checkpoint every N epochs (0 or null to disable)
   checkpoint_dirname: "checkpoints"
+  stop_after_epochs: 50 # early stopping patience (null to disable)

@@ -90,6 +90,7 @@ def main(cfg: DictConfig):
         clip_max_norm=cfg.train.clip_max_norm,
         save_every=int(cfg.train.save_every),
         checkpoint_dirname=cfg.train.checkpoint_dirname,
+        stop_after_epochs=cfg.train.stop_after_epochs,
     )
 
     train_output = train(
