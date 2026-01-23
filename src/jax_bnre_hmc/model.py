@@ -16,6 +16,17 @@ _ACTIVATIONS: dict[str, Callable[[jnp.ndarray], jnp.ndarray]] = {
 
 
 def get_activation(name: str) -> Callable[[jnp.ndarray], jnp.ndarray]:
+    """Get activation function by name.
+    
+    Args:
+        name: Name of the activation function. Must be one of: "tanh", "relu", "gelu", "silu".
+    
+    Returns:
+        The activation function.
+    
+    Raises:
+        ValueError: If the activation name is not recognized.
+    """
     try:
         return _ACTIVATIONS[name]
     except KeyError as e:
@@ -23,7 +34,17 @@ def get_activation(name: str) -> Callable[[jnp.ndarray], jnp.ndarray]:
 
 
 class RatioEstimatorMLP(nn.Module):
-    """f(theta, x) -> logit using an MLP over concat(theta, x)."""
+    """Multi-layer perceptron for neural ratio estimation.
+    
+    Implements f(theta, x) -> logit using an MLP over concatenated (theta, x).
+    The network consists of fully connected layers with optional layer normalization
+    and activation functions.
+    
+    Attributes:
+        hidden_dims: Tuple of hidden layer dimensions. Default: (50, 50, 50).
+        activation: Activation function name ("tanh", "relu", "gelu", or "silu"). Default: "tanh".
+        norm: Normalization type, either "layernorm" or "none". Default: "layernorm".
+    """
     hidden_dims: tuple[int, ...] = (50, 50, 50)
     activation: str = "tanh"
     norm: str = "layernorm"   # "layernorm" or "none"
@@ -33,6 +54,15 @@ class RatioEstimatorMLP(nn.Module):
 
     @nn.compact
     def __call__(self, theta: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
+        """Forward pass of the ratio estimator.
+        
+        Args:
+            theta: Parameter batch of shape (B, theta_dim).
+            x: Observation batch of shape (B, x_dim).
+        
+        Returns:
+            Logits of shape (B,) representing the ratio estimate.
+        """
         # Expect theta: (B, theta_dim), x: (B, x_dim)
         z = jnp.concatenate([theta, x], axis=-1)
 
@@ -48,7 +78,15 @@ class RatioEstimatorMLP(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    """A simple pre-activation residual MLP block with LayerNorm."""
+    """Pre-activation residual MLP block with LayerNorm.
+    
+    Implements a residual connection with pre-activation normalization.
+    Architecture: h -> LN -> act -> Dense -> LN -> act -> Dense -> + skip.
+    
+    Attributes:
+        width: Width of the hidden layers.
+        activation: Activation function name. Default: "relu".
+    """
     width: int
     activation: str = "relu"
 
@@ -57,6 +95,14 @@ class ResidualBlock(nn.Module):
 
     @nn.compact
     def __call__(self, h: jnp.ndarray) -> jnp.ndarray:
+        """Forward pass of the residual block.
+        
+        Args:
+            h: Input features of shape (B, width).
+        
+        Returns:
+            Output features of shape (B, width) with residual connection applied.
+        """
         # Pre-activation style:
         # h -> LN -> act -> Dense -> LN -> act -> Dense -> + skip
         y = nn.LayerNorm()(h)
@@ -71,13 +117,19 @@ class ResidualBlock(nn.Module):
 
 
 class RatioEstimatorResNet(nn.Module):
-    """
-    f(theta, x) -> logit using a ResNet-style MLP over concat(theta, x).
-
-    This is an MLP "ResidualNet" (like SBI's), not a CNN ResNet:
-      - input projection to width
+    """ResNet-style MLP for neural ratio estimation.
+    
+    Implements f(theta, x) -> logit using a residual network architecture.
+    This is an MLP "ResidualNet" (similar to SBI's), not a CNN ResNet.
+    Architecture:
+      - Input projection to hidden_features
       - num_blocks residual blocks
-      - output head to 1 logit
+      - Output head to 1 logit
+    
+    Attributes:
+        hidden_features: Width of hidden layers. Default: 50.
+        num_blocks: Number of residual blocks. Default: 2.
+        activation: Activation function name. Default: "relu".
     """
     hidden_features: int = 50
     num_blocks: int = 2
@@ -89,6 +141,15 @@ class RatioEstimatorResNet(nn.Module):
 
     @nn.compact
     def __call__(self, theta: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
+        """Forward pass of the ResNet ratio estimator.
+        
+        Args:
+            theta: Parameter batch of shape (B, theta_dim).
+            x: Observation batch of shape (B, x_dim).
+        
+        Returns:
+            Logits of shape (B,) representing the ratio estimate.
+        """
         z = jnp.concatenate([theta, x], axis=-1)
 
         # Project to residual width

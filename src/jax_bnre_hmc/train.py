@@ -16,6 +16,19 @@ from .model import RatioEstimatorMLP
 
 @dataclass(frozen=True)
 class TrainConfig:
+    """Configuration for training a Neural Ratio Estimator.
+    
+    Attributes:
+        seed: Random seed for reproducibility.
+        lr: Learning rate for the optimizer.
+        epochs: Number of training epochs.
+        batch_size: Size of each training batch. Remainder examples are dropped.
+        clip_max_norm: Maximum gradient norm for clipping. If None, no clipping is applied.
+        print_every: Print training metrics every N epochs.
+        save_every: Save latest checkpoint every N epochs. If 0, latest checkpoint saving is disabled.
+        checkpoint_dirname: Directory name for storing checkpoints.
+        bnre_lambda: Weight for the BNRE balance penalty. Set to 0.0 for standard NRE training.
+    """
     seed: int = 0
     lr: float = 1e-3
     epochs: int = 2000
@@ -37,9 +50,22 @@ def create_train_state(
     lr: float,
     clip_max_norm: float | None,
 ) -> tuple[RatioEstimatorMLP, train_state.TrainState]:
-    """
-    Initialize model + TrainState (params + optimizer).
-    Returns the model (to use its apply_fn) and the TrainState.
+    """Initialize model and training state with optimizer.
+    
+    Args:
+        rng: Random key for parameter initialization.
+        theta_dim: Dimensionality of the parameter space.
+        x_dim: Dimensionality of the observation space.
+        hidden_dims: Sequence of hidden layer dimensions for the MLP.
+        activation: Activation function name (e.g., "tanh", "relu").
+        norm: Normalization type ("layernorm" or "none").
+        lr: Learning rate for the Adam optimizer.
+        clip_max_norm: Maximum gradient norm for clipping. If None, no clipping.
+    
+    Returns:
+        A tuple containing:
+            - model: The initialized RatioEstimatorMLP model.
+            - state: Flax TrainState with initialized parameters and optimizer.
     """
     hidden_dims = tuple(int(d) for d in hidden_dims)  # Ensure tuple of ints
     model = RatioEstimatorMLP(hidden_dims=hidden_dims, activation=activation, norm=norm)
@@ -69,9 +95,25 @@ def train_step(
     rng: jax.Array,
     bnre_lambda: float,
 ) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """
-    One gradient step on a batch of (theta, x) data.
-    Deterministic given rng.
+    """Perform one gradient step on a batch of training data.
+    
+    Computes the loss (NRE + optional BNRE penalty), computes gradients, and updates
+    the model parameters. The function is JIT-compiled for efficiency.
+    
+    Args:
+        state: Current training state containing model parameters and optimizer.
+        theta: Parameter batch of shape (batch_size, theta_dim).
+        x: Observation batch of shape (batch_size, x_dim).
+        rng: Random key for shuffling joint/marginal pairs.
+        bnre_lambda: Weight for BNRE balance penalty. Set to 0.0 for standard NRE.
+    
+    Returns:
+        A tuple containing:
+            - state: Updated training state after gradient step.
+            - total_loss: Total loss value (NRE + bnre_lambda * penalty).
+            - bce_loss: BCE-style loss metric (for logging).
+            - penalty: BNRE balance penalty value.
+            - balance: BNRE balance value (mean(sigmoid(joint)) + mean(sigmoid(marginal))).
     """
     rng_shuffle, _ = jax.random.split(rng)
     joint, marginal = make_joint_and_marginal(rng_shuffle, theta, x)
@@ -103,9 +145,24 @@ def validation_step(
     rng: jax.Array,
     bnre_lambda: float,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """
-    Compute validation losses without gradients.
-    Deterministic given rng.
+    """Compute validation losses without computing gradients.
+    
+    Evaluates the model on validation data and computes all loss metrics.
+    The function is JIT-compiled for efficiency.
+    
+    Args:
+        state: Current training state containing model parameters.
+        theta: Parameter batch of shape (batch_size, theta_dim).
+        x: Observation batch of shape (batch_size, x_dim).
+        rng: Random key for shuffling joint/marginal pairs.
+        bnre_lambda: Weight for BNRE balance penalty. Set to 0.0 for standard NRE.
+    
+    Returns:
+        A tuple containing:
+            - total_loss: Total loss value (NRE + bnre_lambda * penalty).
+            - bce_loss: BCE-style loss metric (for logging).
+            - penalty: BNRE balance penalty value.
+            - balance: BNRE balance value (mean(sigmoid(joint)) + mean(sigmoid(marginal))).
     """
     rng_shuffle, _ = jax.random.split(rng)
     joint, marginal = make_joint_and_marginal(rng_shuffle, theta, x)
@@ -134,17 +191,30 @@ def train(
     model_norm: str = "layernorm",
     cfg: TrainConfig = TrainConfig(),
 ) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """
-    Fixed-epoch training loop with mini-batching.
-    Each epoch processes the dataset in batches with shuffling.
-    Drops remainder examples to keep batch shapes static.
+    """Train a Neural Ratio Estimator with mini-batching and checkpointing.
+    
+    Implements a fixed-epoch training loop with mini-batching. Each epoch processes
+    the dataset in batches with shuffling. Remainder examples are dropped to keep
+    batch shapes static for JIT compilation efficiency. Supports both NRE and BNRE
+    training based on the bnre_lambda configuration.
+    
+    Args:
+        theta_train: Training parameter samples of shape (n_train, theta_dim).
+        x_train: Training observation samples of shape (n_train, x_dim).
+        theta_val: Validation parameter samples of shape (n_val, theta_dim).
+        x_val: Validation observation samples of shape (n_val, x_dim).
+        model_hidden_dims: Sequence of hidden layer dimensions for the MLP.
+        model_activation: Activation function name (default: "tanh").
+        model_norm: Normalization type, "layernorm" or "none" (default: "layernorm").
+        cfg: Training configuration (learning rate, epochs, batch size, etc.).
     
     Returns:
-        state: Final training state
-        train_losses: Training losses per epoch (averaged over batches)
-        train_bce_losses: Training BCE losses per epoch (averaged over batches)
-        val_losses: Validation losses per epoch (averaged over batches)
-        val_bce_losses: Validation BCE losses per epoch (averaged over batches)
+        A tuple containing:
+            - state: Final training state with trained model parameters.
+            - train_losses: Training losses per epoch (averaged over batches).
+            - train_bce_losses: Training BCE-style losses per epoch (averaged over batches).
+            - val_losses: Validation losses per epoch.
+            - val_bce_losses: Validation BCE-style losses per epoch.
     """
     theta_train = jnp.asarray(theta_train, dtype=jnp.float32)
     x_train = jnp.asarray(x_train, dtype=jnp.float32)
