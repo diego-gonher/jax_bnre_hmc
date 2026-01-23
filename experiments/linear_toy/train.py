@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import os
 os.environ["JAX_PLATFORMS"] = "cpu"
+os.environ["ABSL_LOGGING_THRESHOLD"] = "2"  # 0=INFO,1=WARNING,2=ERROR,3=FATAL
+
+from absl import logging as absl_logging
+absl_logging.set_verbosity(absl_logging.ERROR)
+absl_logging.set_stderrthreshold("error")
 
 import hydra
 from hydra.core.hydra_config import HydraConfig
@@ -78,6 +83,9 @@ def main(cfg: DictConfig):
         epochs=int(cfg.train.epochs),
         print_every=int(cfg.train.print_every),
         batch_size=int(cfg.train.batch_size),
+        clip_max_norm=cfg.train.clip_max_norm,
+        save_every=int(cfg.train.save_every),
+        checkpoint_dirname=cfg.train.checkpoint_dirname,
     )
 
     train_output = train(

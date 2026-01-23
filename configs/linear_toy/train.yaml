@@ -15,7 +15,7 @@ prior:
   b_high: 1.0
 
 data:
-  n_simulations: 2048
+  n_simulations: 1024
   n_points: 10
   sigma: 0.1
   validation_fraction: 0.2
@@ -28,5 +28,8 @@ model:
 train:
   lr: 0.0005
   epochs: 1000
-  batch_size: 256
-  print_every: 50
+  batch_size: 128
+  print_every: 100
+  clip_max_norm: 5.0 # null for no clipping
+  save_every: 200 # save latest checkpoint every N epochs (0 or null to disable)
+  checkpoint_dirname: "checkpoints"

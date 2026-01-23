@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import optax
 from flax.training import train_state
 
+from .checkpointing import ensure_dirs, get_run_dir, save_best, save_latest
 from .data import make_batches, make_joint_and_marginal
 from .loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from .model import RatioEstimatorMLP
@@ -19,7 +20,10 @@ class TrainConfig:
     lr: float = 1e-3
     epochs: int = 2000
     batch_size: int = 1024
+    clip_max_norm: float | None = 5.0 
     print_every: int = 200
+    save_every: int = 200
+    checkpoint_dirname: str = "checkpoints"
 
 
 def create_train_state(
@@ -30,6 +34,7 @@ def create_train_state(
     activation: str,
     norm: str,
     lr: float,
+    clip_max_norm: float | None,
 ) -> tuple[RatioEstimatorMLP, train_state.TrainState]:
     """
     Initialize model + TrainState (params + optimizer).
@@ -44,7 +49,13 @@ def create_train_state(
     params = model.init(rng, dummy_theta, dummy_x)
 
     # Create optimizer
-    tx = optax.adam(lr)
+    if clip_max_norm is not None:
+        tx = optax.chain(
+            optax.clip_by_global_norm(clip_max_norm),
+            optax.adam(lr),
+        )
+    else:
+        tx = optax.adam(lr)
     state = train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
     return model, state
 
@@ -136,12 +147,20 @@ def train(
         activation=model_activation,
         norm=model_norm,
         lr=cfg.lr,
+        clip_max_norm=cfg.clip_max_norm,
     )
 
     train_losses = []
     train_bce_losses = []
     val_losses = []
     val_bce_losses = []
+    
+    # Initialize checkpointing
+    best_val_loss = float("inf")
+    run_dir = get_run_dir()
+    latest_dir, best_dir = ensure_dirs(run_dir, cfg.checkpoint_dirname)
+    latest_meta_path = run_dir / cfg.checkpoint_dirname / "latest_meta.json"
+    best_meta_path = run_dir / cfg.checkpoint_dirname / "best_meta.json"
     
     for epoch in range(cfg.epochs):
         # Training: iterate over batches
@@ -166,12 +185,23 @@ def train(
         val_loss, val_bce_loss = validation_step(state, theta_val, x_val, rng_val_step)
         val_losses.append(val_loss)
         val_bce_losses.append(val_bce_loss)
+        
+        val_loss_float = float(val_loss)
+        
+        # Checkpointing: save latest
+        if cfg.save_every and cfg.save_every > 0 and (epoch + 1) % cfg.save_every == 0:
+            save_latest(state, latest_dir, latest_meta_path, epoch + 1, val_loss_float)
+        
+        # Checkpointing: save best
+        if val_loss_float < best_val_loss:
+            best_val_loss = val_loss_float
+            save_best(state.params, best_dir, best_meta_path, epoch + 1, val_loss_float)
 
         if (epoch + 1) % cfg.print_every == 0:
             print(
                 f"epoch {epoch+1:5d} | "
                 f"train_loss {float(train_loss):.6f} | train_bce {float(train_bce_loss):.6f} | "
-                f"val_loss {float(val_loss):.6f} | val_bce {float(val_bce_loss):.6f}"
+                f"val_loss {val_loss_float:.6f} | val_bce {float(val_bce_loss):.6f}"
             )
 
     return (
