@@ -65,3 +65,9 @@ def save_best(
     checkpointer = PyTreeCheckpointer()
     checkpointer.save(best_dir, params, force=True)
     write_meta(meta_path, epoch, val_loss)
+
+
+def load_best_params(best_dir: Path) -> dict:
+    """Load best model parameters from checkpoint directory."""
+    checkpointer = PyTreeCheckpointer()
+    return checkpointer.restore(best_dir)

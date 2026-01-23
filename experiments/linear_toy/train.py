@@ -8,6 +8,7 @@ from absl import logging as absl_logging
 absl_logging.set_verbosity(absl_logging.ERROR)
 absl_logging.set_stderrthreshold("error")
 
+import json
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from pathlib import Path
@@ -19,6 +20,8 @@ import matplotlib.pyplot as plt
 
 from jax_bnre_hmc.train import TrainConfig, train
 from jax_bnre_hmc.data import make_joint_and_marginal
+from jax_bnre_hmc.checkpointing import load_best_params
+from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 
 
 def simulate_linear_dataset(
@@ -160,6 +163,35 @@ def main(cfg: DictConfig):
     plt.legend()
     plt.savefig(run_dir / "sigmoid.png", dpi=150, bbox_inches="tight")
     plt.close()
+
+    # Load best params and verify validation loss
+    best_dir = run_dir / cfg.train.checkpoint_dirname / "best"
+    best_meta_path = run_dir / cfg.train.checkpoint_dirname / "best_meta.json"
+    
+    if best_dir.exists() and best_meta_path.exists():
+        # Load best params
+        best_params = load_best_params(best_dir)
+        
+        # Read expected best validation loss from metadata
+        best_meta = json.loads(best_meta_path.read_text())
+        expected_best_val_loss = best_meta["val_loss"]
+        
+        # Recompute validation loss using best params
+        key_val = jax.random.PRNGKey(int(cfg.seed) + 117)  # Use different key for verification
+        joint_val, marginal_val = make_joint_and_marginal(key_val, theta_val, x_val)
+        logits_joint_val = state.apply_fn(best_params, joint_val.theta, joint_val.x)
+        logits_marg_val = state.apply_fn(best_params, marginal_val.theta, marginal_val.x)
+        recomputed_val_loss = float(nre_loss_from_logits(logits_joint_val, logits_marg_val))
+        
+        print(f"\nBest model verification:")
+        print(f"  Expected best val_loss (from metadata): {expected_best_val_loss:.6f}")
+        print(f"  Recomputed val_loss (from loaded params): {recomputed_val_loss:.6f}")
+        print(f"  Difference: {abs(recomputed_val_loss - expected_best_val_loss):.6e}")
+        
+        if abs(recomputed_val_loss - expected_best_val_loss) < 1e-5:
+            print("  ✓ Validation loss matches!")
+        else:
+            print("  ⚠ Warning: Validation loss mismatch, likely due to random seed mismatch for shuffling!")
 
 
 if __name__ == "__main__":
