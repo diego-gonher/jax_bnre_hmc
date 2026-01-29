@@ -1,0 +1,37 @@
+exp_name: 2param
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+
+seed: 0
+
+# prior:
+#   m_low: 0.0
+#   m_high: 1.0
+#   b_low: 0.0
+#   b_high: 1.0
+
+data:
+  # n_simulations: 1024
+  n_points: 10
+  # sigma: 0.1
+  validation_fraction: 0.2
+
+model:
+  hidden_dims: [50, 50, 50]
+  activation: tanh
+  norm: layernorm
+
+train:
+  lr: 0.0005
+  epochs: 5000
+  bnre_lambda: 10.0
+  batch_size: 128
+  print_every: 100
+  clip_max_norm: 5.00 # null for no clipping
+  save_every: 200 # save latest checkpoint every N epochs (0 or null to disable)
+  checkpoint_dirname: "checkpoints"
+  stop_after_epochs: 250 # early stopping patience (null to disable)
