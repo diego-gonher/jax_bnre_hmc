@@ -17,7 +17,7 @@ from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 model = RatioEstimatorMLP(hidden_dims=(50, 50, 50), activation="tanh", norm="layernorm")
 
 # 2) load params (PyTree) and get apply_fn
-best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/outputs/linear_toy/2026-01-26_17-09-04/checkpoints/best/'
+best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/outputs/linear_toy/2026-01-29_16-18-01_gamma10000.0/checkpoints/best/'
 
 # Output directory should be best_dir's parent's parent, and create it if it doesn't exist
 output_dir = '/'.join(best_dir.split('/')[:-3]) + '/hmc_results/'
@@ -60,7 +60,7 @@ def simulate_linear_dataset(
 
     return theta.astype(jnp.float32), y_noisy.astype(jnp.float32)
 
-N_OBSERVATIONS = 100
+N_OBSERVATIONS = 500
 
 key = jax.random.PRNGKey(42)
 # Simulate the full dataset
