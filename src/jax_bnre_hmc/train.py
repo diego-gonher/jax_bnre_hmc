@@ -38,7 +38,7 @@ class TrainConfig:
     print_every: int = 200
     save_every: int = 200
     checkpoint_dirname: str = "checkpoints"
-    bnre_lambda: float = 10.0
+    bnre_lambda: float = 100.0
     stop_after_epochs: int | None = None
 
 

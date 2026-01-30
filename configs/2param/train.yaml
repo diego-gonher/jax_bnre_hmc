@@ -30,7 +30,7 @@ train:
   epochs: 5000
   bnre_lambda: 10.0
   batch_size: 128
-  print_every: 100
+  print_every: 10
   clip_max_norm: 5.00 # null for no clipping
   save_every: 200 # save latest checkpoint every N epochs (0 or null to disable)
   checkpoint_dirname: "checkpoints"
