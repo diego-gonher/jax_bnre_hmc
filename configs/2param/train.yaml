@@ -8,16 +8,7 @@ hydra:
 
 seed: 0
 
-# prior:
-#   m_low: 0.0
-#   m_high: 1.0
-#   b_low: 0.0
-#   b_high: 1.0
-
 data:
-  # n_simulations: 1024
-  n_points: 10
-  # sigma: 0.1
   validation_fraction: 0.2
 
 model:
@@ -28,7 +19,7 @@ model:
 train:
   lr: 0.0005
   epochs: 5000
-  bnre_lambda: 10.0
+  bnre_lambda: 100.0
   batch_size: 128
   print_every: 10
   clip_max_norm: 5.00 # null for no clipping
