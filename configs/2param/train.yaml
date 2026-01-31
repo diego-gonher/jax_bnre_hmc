@@ -18,11 +18,11 @@ model:
 
 train:
   lr: 0.0005
-  epochs: 5000
-  bnre_lambda: 1000.0
+  epochs: 1000
+  bnre_gamma: 1000.0
   batch_size: 128
   print_every: 10
   clip_max_norm: 5.00 # null for no clipping
   save_every: 200 # save latest checkpoint every N epochs (0 or null to disable)
   checkpoint_dirname: "checkpoints"
-  stop_after_epochs: 250 # early stopping patience (null to disable)
+  stop_after_epochs: 100 # early stopping patience (null to disable)

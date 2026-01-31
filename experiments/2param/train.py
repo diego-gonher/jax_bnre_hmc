@@ -65,9 +65,9 @@ def main(cfg: DictConfig):
 
         # split the dataset into a training and test set
         theta_scaled, _1, x_scaled, _2 = train_test_split(dataset_params_scaled_reshaped, 
-                                                                                     dataset_mocks_scaled_reshaped, 
-                                                                                     test_size=int(558-no_mocks_per_parameter_pair), 
-                                                                                     random_state=42)
+                                                          dataset_mocks_scaled_reshaped, 
+                                                          test_size=int(558-no_mocks_per_parameter_pair), 
+                                                          random_state=42)
         
         # only keep the first mocks_per_model mocks for each model, and reshape the dataset to 2D
         theta_scaled = theta_scaled[:, :no_mocks_per_parameter_pair, :].reshape(-1, 2)
@@ -89,7 +89,7 @@ def main(cfg: DictConfig):
         seed=int(cfg.seed),
         lr=float(cfg.train.lr),
         epochs=int(cfg.train.epochs),
-        bnre_lambda=float(cfg.train.bnre_lambda),
+        bnre_gamma=float(cfg.train.bnre_gamma),
         print_every=int(cfg.train.print_every),
         batch_size=int(cfg.train.batch_size),
         clip_max_norm=cfg.train.clip_max_norm,

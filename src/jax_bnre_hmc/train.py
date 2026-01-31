@@ -27,7 +27,7 @@ class TrainConfig:
         print_every: Print training metrics every N epochs.
         save_every: Save latest checkpoint every N epochs. If 0, latest checkpoint saving is disabled.
         checkpoint_dirname: Directory name for storing checkpoints.
-        bnre_lambda: Weight for the BNRE balance penalty. Set to 0.0 for standard NRE training.
+        bnre_gamma: Weight for the BNRE balance penalty. Set to 0.0 for standard NRE training.
         stop_after_epochs: Early stopping patience. Stop training if no improvement for N epochs. If None, no early stopping.
     """
     seed: int = 0
@@ -38,7 +38,7 @@ class TrainConfig:
     print_every: int = 200
     save_every: int = 200
     checkpoint_dirname: str = "checkpoints"
-    bnre_lambda: float = 100.0
+    bnre_gamma: float = 100.0
     stop_after_epochs: int | None = None
 
 
@@ -95,7 +95,7 @@ def train_step(
     theta: jnp.ndarray,
     x: jnp.ndarray,
     rng: jax.Array,
-    bnre_lambda: float,
+    bnre_gamma: float,
 ) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Perform one gradient step on a batch of training data.
     
@@ -107,12 +107,12 @@ def train_step(
         theta: Parameter batch of shape (batch_size, theta_dim).
         x: Observation batch of shape (batch_size, x_dim).
         rng: Random key for shuffling joint/marginal pairs.
-        bnre_lambda: Weight for BNRE balance penalty. Set to 0.0 for standard NRE.
+        bnre_gamma: Weight for BNRE balance penalty. Set to 0.0 for standard NRE.
     
     Returns:
         A tuple containing:
             - state: Updated training state after gradient step.
-            - total_loss: Total loss value (NRE + bnre_lambda * penalty).
+            - total_loss: Total loss value (NRE + bnre_gamma * penalty).
             - bce_loss: BCE-style loss metric (for logging).
             - penalty: BNRE balance penalty value.
             - balance: BNRE balance value (mean(sigmoid(joint)) + mean(sigmoid(marginal))).
@@ -128,9 +128,9 @@ def train_step(
         bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
         penalty, balance = bnre_balance_from_logits(logits_joint, logits_marg)
         
-        # Always compute total_loss = nre_loss + bnre_lambda * penalty
-        # When bnre_lambda == 0.0, this equals nre_loss exactly
-        total_loss = nre_loss + bnre_lambda * penalty
+        # Always compute total_loss = nre_loss + bnre_gamma * penalty
+        # When bnre_gamma == 0.0, this equals nre_loss exactly
+        total_loss = nre_loss + bnre_gamma * penalty
         
         return total_loss, (bce_loss, penalty, balance)
 
@@ -145,7 +145,7 @@ def validation_step(
     theta: jnp.ndarray,
     x: jnp.ndarray,
     rng: jax.Array,
-    bnre_lambda: float,
+    bnre_gamma: float,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Compute validation losses without computing gradients.
     
@@ -157,11 +157,11 @@ def validation_step(
         theta: Parameter batch of shape (batch_size, theta_dim).
         x: Observation batch of shape (batch_size, x_dim).
         rng: Random key for shuffling joint/marginal pairs.
-        bnre_lambda: Weight for BNRE balance penalty. Set to 0.0 for standard NRE.
+        bnre_gamma: Weight for BNRE balance penalty. Set to 0.0 for standard NRE.
     
     Returns:
         A tuple containing:
-            - total_loss: Total loss value (NRE + bnre_lambda * penalty).
+            - total_loss: Total loss value (NRE + bnre_gamma * penalty).
             - bce_loss: BCE-style loss metric (for logging).
             - penalty: BNRE balance penalty value.
             - balance: BNRE balance value (mean(sigmoid(joint)) + mean(sigmoid(marginal))).
@@ -176,9 +176,9 @@ def validation_step(
     bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
     penalty, balance = bnre_balance_from_logits(logits_joint, logits_marg)
     
-    # Always compute total_loss = nre_loss + bnre_lambda * penalty
-    # When bnre_lambda == 0.0, this equals nre_loss exactly
-    total_loss = nre_loss + bnre_lambda * penalty
+    # Always compute total_loss = nre_loss + bnre_gamma * penalty
+    # When bnre_gamma == 0.0, this equals nre_loss exactly
+    total_loss = nre_loss + bnre_gamma * penalty
     
     return total_loss, bce_loss, penalty, balance
 
@@ -198,7 +198,7 @@ def train(
     Implements a fixed-epoch training loop with mini-batching. Each epoch processes
     the dataset in batches with shuffling. Remainder examples are dropped to keep
     batch shapes static for JIT compilation efficiency. Supports both NRE and BNRE
-    training based on the bnre_lambda configuration. Includes early stopping based
+    training based on the bnre_gamma configuration. Includes early stopping based
     on validation loss improvement.
     
     Args:
@@ -262,7 +262,7 @@ def train(
         for theta_batch, x_batch in make_batches(rng_epoch, theta_train, x_train, cfg.batch_size):
             rng_train, rng_step = jax.random.split(rng_train)
             state, batch_loss, batch_bce_loss, batch_penalty, batch_balance = train_step(
-                state, theta_batch, x_batch, rng_step, cfg.bnre_lambda
+                state, theta_batch, x_batch, rng_step, cfg.bnre_gamma
             )
             epoch_train_losses.append(batch_loss)
             epoch_train_bce_losses.append(batch_bce_loss)
@@ -280,10 +280,10 @@ def train(
         # Validation step (no mini-batching)
         rng_val, rng_val_step = jax.random.split(rng_val)
         val_loss, val_bce_loss, val_penalty, val_balance = validation_step(
-            state, theta_val, x_val, rng_val_step, cfg.bnre_lambda
+            state, theta_val, x_val, rng_val_step, cfg.bnre_gamma
         )
         # val_key_fixed = jax.random.PRNGKey(cfg.seed + 117)  # this is to verify the best model
-        # val_loss, val_bce_loss, val_penalty, val_balance = validation_step(state, theta_val, x_val, val_key_fixed, cfg.bnre_lambda)  # this is to verify the best model
+        # val_loss, val_bce_loss, val_penalty, val_balance = validation_step(state, theta_val, x_val, val_key_fixed, cfg.bnre_gamma)  # this is to verify the best model
         val_losses.append(val_loss)
         val_bce_losses.append(val_bce_loss)
         
@@ -305,7 +305,7 @@ def train(
             break
 
         if (epoch + 1) % cfg.print_every == 0:
-            if cfg.bnre_lambda > 0.0:
+            if cfg.bnre_gamma > 0.0:
                 print(
                     f"epoch {epoch+1:5d} | "
                     f"train_loss {float(train_loss):.6f} | train_bce {float(train_bce_loss):.6f} | "
