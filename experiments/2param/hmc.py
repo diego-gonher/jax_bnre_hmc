@@ -18,7 +18,7 @@ from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 model = RatioEstimatorMLP(hidden_dims=(50, 50, 50), activation="tanh", norm="layernorm")
 
 # 2) load params (PyTree) and get apply_fn
-best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/outputs/2param/2026-01-30_22-40-32/checkpoints/best/'
+best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/outputs/2param/2026-01-30_22-40-32_gamma1000.0/checkpoints/best/'
 
 # Output directory should be best_dir's parent's parent, and create it if it doesn't exist
 output_dir = '/'.join(best_dir.split('/')[:-3]) + '/hmc_results/'
@@ -113,7 +113,7 @@ def uniform_param_sampling_and_mock_selection(
 
     return truths_to_infer, mocks_to_infer, uniform_samples
 
-N_OBSERVATIONS = 100
+N_OBSERVATIONS = 500
 
 # Simulate the full dataset
 theta_true, x_obs, _ = uniform_param_sampling_and_mock_selection(params_scaled_reshaped=dataset_params_scaled_reshaped,
@@ -149,7 +149,7 @@ for i in range(N_OBSERVATIONS):
     init_z = jnp.zeros((num_chains, D), dtype=jnp.float32)
 
     # 8) run NUTS
-    mcmc = run_nuts(potential, jax.random.PRNGKey(0), init_z, num_warmup=1000, num_samples=1000, num_chains=num_chains)
+    mcmc = run_nuts(potential, jax.random.PRNGKey(0), init_z, num_warmup=4000, num_samples=4000, num_chains=num_chains)
 
     # 9) samples: numpyro will return z samples; map to theta
     z_samples = mcmc.get_samples(group_by_chain=False)  # (num_chains*num_samples, D)
