@@ -179,7 +179,7 @@ for idx in selected_indices:
 
     figure = corner.corner(
         samples,
-        labels=["m", "b"],
+        labels=["mfp", "<F>"],
         truths=true_params,
         show_titles=True,
         title_fmt=".3f",
