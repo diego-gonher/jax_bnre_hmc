@@ -54,7 +54,7 @@ with h5py.File(dataset_file, 'r') as f:
     print(f'scaled x shape: {x_scaled.shape}')
 
 # Randomly select N_OBSERVATIONS from the dataset for inference    
-N_OBSERVATIONS = 100
+N_OBSERVATIONS = 500
 
 # Split the dataset into train and validation sets, it must be the scaled versions
 print("\nSplitting dataset into train and validation sets...")
@@ -111,7 +111,7 @@ print("All done.")
 print("Posterior samples shape:", posterior_samples.shape)
 
 # Optional: plot corner plots N_PLOTS randomly selected observations
-N_PLOTS = 10
+N_PLOTS = 25
 rng = np.random.default_rng(1234)
 selected_indices = rng.choice(N_OBSERVATIONS, size=N_PLOTS, replace=False)  
 
@@ -140,9 +140,9 @@ key = jax.random.PRNGKey(42)
 key, subkey = jax.random.split(key)
 references = jax.random.uniform(
     subkey,
-    shape=(N_OBSERVATIONS, 2),
-    minval=jnp.array([0.0, 0.0], dtype=jnp.float32),
-    maxval=jnp.array([1.0, 1.0], dtype=jnp.float32),
+    shape=(N_OBSERVATIONS, 4),
+    minval=jnp.array([-1.0, -1.0, -1.0, -1.0], dtype=jnp.float32),
+    maxval=jnp.array([1.0, 1.0, 1.0, 1.0], dtype=jnp.float32),
 )
 
 ecp, alpha_grid = run_tarp_jax(
