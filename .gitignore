@@ -11,4 +11,7 @@ build/
 outputs/
 .multirun/
 
+# Datasets
+datasets/
+
 .DS_Store

@@ -1,0 +1,28 @@
+exp_name: sinusoid
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+
+seed: 0
+
+data:
+  validation_fraction: 0.2
+
+model:
+  hidden_dims: [50, 50, 50]
+  activation: tanh
+  norm: layernorm
+
+train:
+  lr: 0.0005
+  epochs: 5000
+  bnre_gamma: 100.0
+  batch_size: 128
+  print_every: 10
+  clip_max_norm: 5.00 # null for no clipping
+  save_every: 500 # save latest checkpoint every N epochs (0 or null to disable)
+  checkpoint_dirname: "checkpoints"
+  stop_after_epochs: 250 # early stopping patience (null to disable)
