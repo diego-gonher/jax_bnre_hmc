@@ -166,6 +166,7 @@ class RatioEstimatorResNet(nn.Module):
         logit = nn.Dense(1)(h)
         return jnp.squeeze(logit, axis=-1)
 
+
 def sinusoidal_positional_encoding(seq_len: int, d_model: int) -> jnp.ndarray:
     """Create deterministic sinusoidal positional encodings.
 

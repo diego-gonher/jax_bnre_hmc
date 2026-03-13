@@ -1,0 +1,35 @@
+exp_name: sinusoid_transformer
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+
+seed: 0
+
+data:
+  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_masked_nsim20000_ntime50_seed117.h5
+  validation_fraction: 0.2
+
+model:
+  d_model: 64
+  num_layers: 2
+  num_heads: 4
+  transformer_mlp_dim: 128
+  transformer_activation: gelu
+
+  head_hidden_dims: [50, 50, 50]
+  head_activation: tanh
+  head_norm: layernorm
+
+train:
+  lr: 0.0005
+  epochs: 600
+  bnre_gamma: 100.0
+  batch_size: 128
+  print_every: 1
+  clip_max_norm: 5.0
+  save_every: 200
+  checkpoint_dirname: "checkpoints"
+  stop_after_epochs: 100

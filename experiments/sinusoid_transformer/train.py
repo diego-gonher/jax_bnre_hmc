@@ -1,0 +1,230 @@
+from __future__ import annotations
+
+import os
+os.environ["JAX_PLATFORMS"] = "cpu"
+os.environ["ABSL_LOGGING_THRESHOLD"] = "2"  # 0=INFO,1=WARNING,2=ERROR,3=FATAL
+
+from absl import logging as absl_logging
+absl_logging.set_verbosity(absl_logging.ERROR)
+absl_logging.set_stderrthreshold("error")
+
+import json
+from pathlib import Path
+
+import h5py
+import hydra
+import jax
+import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig, OmegaConf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+
+from jax_bnre_hmc.checkpointing import load_best_params
+from jax_bnre_hmc.data import make_joint_and_marginal
+from jax_bnre_hmc.loss import nre_loss_from_logits
+from jax_bnre_hmc.model import RatioEstimatorTransformer
+from jax_bnre_hmc.train import TrainConfig, train
+
+
+@hydra.main(config_path="../../configs/sinusoid_transformer", config_name="train", version_base="1.3")
+def main(cfg: DictConfig):
+    # -----------------------------
+    # Load dataset
+    # -----------------------------
+    dataset_file = str(cfg.data.dataset_file)
+    print(f"\nLoading dataset from {dataset_file}")
+
+    with h5py.File(dataset_file, "r") as f:
+        theta = f["theta"][:]
+        y_obs = f["y_obs"][:]
+        mask = f["mask"][:]
+
+    print(f"\ntheta shape: {theta.shape}")
+    print(f"y_obs shape: {y_obs.shape}")
+    print(f"mask shape:  {mask.shape}")
+
+    # -----------------------------
+    # Scale theta and y only
+    # -----------------------------
+    theta_scaler = MinMaxScaler(feature_range=(-1, 1))
+    y_scaler = MinMaxScaler(feature_range=(-1, 1))
+
+    theta_scaled = theta_scaler.fit_transform(theta).astype(np.float32)
+    y_obs_scaled = y_scaler.fit_transform(y_obs).astype(np.float32)
+    mask = mask.astype(np.float32)
+
+    print(f"\nscaled theta shape: {theta_scaled.shape}")
+    print(f"scaled y_obs shape: {y_obs_scaled.shape}")
+
+    # Build tokenized input: [y_i, m_i]
+    x_tokens = np.stack([y_obs_scaled, mask], axis=-1).astype(np.float32)
+    print(f"x_tokens shape: {x_tokens.shape}")  # (n_sim, n_observation_dims, 2)
+
+    # -----------------------------
+    # Train / validation split
+    # -----------------------------
+    print("\nSplitting dataset into train and validation sets...")
+    theta_train, theta_val, x_train, x_val = train_test_split(
+        theta_scaled,
+        x_tokens,
+        test_size=float(cfg.data.validation_fraction),
+        random_state=int(cfg.seed),
+    )
+
+    # -----------------------------
+    # Train config
+    # -----------------------------
+    train_cfg = TrainConfig(
+        seed=int(cfg.seed),
+        lr=float(cfg.train.lr),
+        epochs=int(cfg.train.epochs),
+        bnre_gamma=float(cfg.train.bnre_gamma),
+        print_every=int(cfg.train.print_every),
+        batch_size=int(cfg.train.batch_size),
+        clip_max_norm=cfg.train.clip_max_norm,
+        save_every=int(cfg.train.save_every),
+        checkpoint_dirname=cfg.train.checkpoint_dirname,
+        stop_after_epochs=cfg.train.stop_after_epochs,
+    )
+    print("\nTraining configuration created\nStarting training loop:")
+
+    # -----------------------------
+    # Model
+    # -----------------------------
+    model = RatioEstimatorTransformer(
+        d_model=int(cfg.model.d_model),
+        num_layers=int(cfg.model.num_layers),
+        num_heads=int(cfg.model.num_heads),
+        transformer_mlp_dim=int(cfg.model.transformer_mlp_dim),
+        transformer_activation=str(cfg.model.transformer_activation),
+        head_hidden_dims=tuple(cfg.model.head_hidden_dims),
+        head_activation=str(cfg.model.head_activation),
+        head_norm=str(cfg.model.head_norm),
+    )
+
+    train_output = train(
+        theta_train=theta_train,
+        x_train=x_train,
+        theta_val=theta_val,
+        x_val=x_val,
+        model=model,
+        cfg=train_cfg,
+    )
+
+    state, train_losses, train_bce_losses, val_losses, val_bce_losses = train_output
+
+    # -----------------------------
+    # Output directory
+    # -----------------------------
+    run_dir = Path(HydraConfig.get().run.dir).resolve()
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save resolved config
+    (run_dir / "config.yaml").write_text(OmegaConf.to_yaml(cfg))
+
+    # -----------------------------
+    # Basic sanity prints
+    # -----------------------------
+    print("done. final train loss:", float(train_losses[-1]))
+    print("done. final train bce :", float(train_bce_losses[-1]))
+    print("done. final val loss  :", float(val_losses[-1]))
+    print("done. final val bce   :", float(val_bce_losses[-1]))
+
+    # -----------------------------
+    # Joint vs marginal sanity check
+    # Use scaled/tokenized data
+    # -----------------------------
+    key2 = jax.random.PRNGKey(int(cfg.seed) + 1)
+    theta_all = jnp.asarray(theta_scaled, dtype=jnp.float32)
+    x_all = jnp.asarray(x_tokens, dtype=jnp.float32)
+
+    joint, marginal = make_joint_and_marginal(key2, theta_all, x_all)
+    lj = state.apply_fn(state.params, joint.theta, joint.x)
+    lm = state.apply_fn(state.params, marginal.theta, marginal.x)
+
+    print("mean(logit) joint   :", float(jnp.mean(lj)))
+    print("mean(logit) marginal:", float(jnp.mean(lm)))
+
+    pj = jax.nn.sigmoid(lj)
+    pm = jax.nn.sigmoid(lm)
+
+    print("mean(sigmoid) joint   :", float(jnp.mean(pj)))
+    print("mean(sigmoid) marginal:", float(jnp.mean(pm)))
+
+    # -----------------------------
+    # Save metrics
+    # -----------------------------
+    (run_dir / "metrics.txt").write_text(
+        f"final_train_loss: {float(train_losses[-1])}\n"
+        f"final_val_loss: {float(val_losses[-1])}\n"
+        f"final_train_bce_style_loss: {float(train_bce_losses[-1])}\n"
+        f"final_val_bce_style_loss: {float(val_bce_losses[-1])}\n"
+        f"mean_logit_joint: {float(jnp.mean(lj))}\n"
+        f"mean_logit_marginal: {float(jnp.mean(lm))}\n"
+        f"mean_sigmoid_joint: {float(jnp.mean(pj))}\n"
+        f"mean_sigmoid_marginal: {float(jnp.mean(pm))}\n"
+    )
+
+    # -----------------------------
+    # Plots
+    # -----------------------------
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_losses, label="train_loss")
+    plt.plot(val_losses, label="val_loss")
+    plt.legend()
+    plt.savefig(run_dir / "losses.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_bce_losses, label="train_bce_style_loss")
+    plt.plot(val_bce_losses, label="val_bce_style_loss")
+    plt.legend()
+    plt.savefig(run_dir / "bce_style_losses.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
+    # Plot only a subset of sigmoid outputs, otherwise this can be visually messy
+    n_plot = min(500, len(pj))
+    plt.figure(figsize=(10, 5))
+    plt.plot(np.array(pj[:n_plot]), label="joint")
+    plt.plot(np.array(pm[:n_plot]), label="marginal")
+    plt.legend()
+    plt.savefig(run_dir / "sigmoid_subset.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
+    # -----------------------------
+    # Load best params and verify validation loss
+    # -----------------------------
+    best_dir = run_dir / cfg.train.checkpoint_dirname / "best"
+    best_meta_path = run_dir / cfg.train.checkpoint_dirname / "best_meta.json"
+
+    if best_dir.exists() and best_meta_path.exists():
+        best_params = load_best_params(best_dir)
+
+        best_meta = json.loads(best_meta_path.read_text())
+        expected_best_val_loss = best_meta["val_loss"]
+
+        key_val = jax.random.PRNGKey(int(cfg.seed) + 117)
+        theta_val_jnp = jnp.asarray(theta_val, dtype=jnp.float32)
+        x_val_jnp = jnp.asarray(x_val, dtype=jnp.float32)
+
+        joint_val, marginal_val = make_joint_and_marginal(key_val, theta_val_jnp, x_val_jnp)
+        logits_joint_val = state.apply_fn(best_params, joint_val.theta, joint_val.x)
+        logits_marg_val = state.apply_fn(best_params, marginal_val.theta, marginal_val.x)
+        recomputed_val_loss = float(nre_loss_from_logits(logits_joint_val, logits_marg_val))
+
+        print(f"\nBest model verification:")
+        print(f"  Expected best val_loss (from metadata): {expected_best_val_loss:.6f}")
+        print(f"  Recomputed val_loss (from loaded params): {recomputed_val_loss:.6f}")
+        print(f"  Difference: {abs(recomputed_val_loss - expected_best_val_loss):.6e}")
+
+        if abs(recomputed_val_loss - expected_best_val_loss) < 1e-5:
+            print("  ✓ Validation loss matches!")
+        else:
+            print("  ⚠ Warning: Validation loss mismatch, likely due to random seed mismatch for shuffling!")
+
+
+if __name__ == "__main__":
+    main()
