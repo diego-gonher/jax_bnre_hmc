@@ -71,13 +71,11 @@ def main(cfg: DictConfig):
     # zero masked entries for actual model input
     y_obs_scaled = y_obs_scaled * mask.astype(np.float32)
 
+    # Build tokenized input: [y_i, m_i]
     x_tokens = np.stack([y_obs_scaled, mask.astype(np.float32)], axis=-1).astype(np.float32)
 
     print(f"\nscaled theta shape: {theta_scaled.shape}")
     print(f"scaled y_obs shape: {y_obs_scaled.shape}")
-
-    # Build tokenized input: [y_i, m_i]
-    x_tokens = np.stack([y_obs_scaled, mask], axis=-1).astype(np.float32)
     print(f"x_tokens shape: {x_tokens.shape}")  # (n_sim, n_observation_dims, 2)
 
     # -----------------------------
