@@ -13,7 +13,7 @@ data:
   validation_fraction: 0.2
 
 model:
-  d_model: 64
+  d_model: 8
   num_layers: 2
   num_heads: 4
   transformer_mlp_dim: 128
@@ -25,11 +25,11 @@ model:
 
 train:
   lr: 0.0005
-  epochs: 600
+  epochs: 500
   bnre_gamma: 100.0
   batch_size: 128
   print_every: 1
   clip_max_norm: 5.0
-  save_every: 200
+  save_every: 50
   checkpoint_dirname: "checkpoints"
-  stop_after_epochs: 100
+  stop_after_epochs: 50

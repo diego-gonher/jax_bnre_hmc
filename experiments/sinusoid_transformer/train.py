@@ -38,6 +38,7 @@ def main(cfg: DictConfig):
     print(f"\nLoading dataset from {dataset_file}")
 
     with h5py.File(dataset_file, "r") as f:
+        # load the needed arrays
         theta = f["theta"][:]
         y_obs = f["y_obs"][:]
         mask = f["mask"][:]
@@ -49,12 +50,28 @@ def main(cfg: DictConfig):
     # -----------------------------
     # Scale theta and y only
     # -----------------------------
+
+    # replace invalid values with mean across observation axis
+    valid = mask > 0.5
+
+    # per-timepoint mean over valid entries only
+    valid_counts = np.sum(valid, axis=0)
+    valid_sums = np.sum(y_obs * valid, axis=0)
+    col_means = valid_sums / np.maximum(valid_counts, 1)
+
+    # fill masked entries only for scaling
+    y_obs_filled = np.where(valid, y_obs, col_means[None, :])
+
+    # scale
     theta_scaler = MinMaxScaler(feature_range=(-1, 1))
     y_scaler = MinMaxScaler(feature_range=(-1, 1))
-
     theta_scaled = theta_scaler.fit_transform(theta).astype(np.float32)
-    y_obs_scaled = y_scaler.fit_transform(y_obs).astype(np.float32)
-    mask = mask.astype(np.float32)
+    y_obs_scaled = y_scaler.fit_transform(y_obs_filled).astype(np.float32)
+
+    # zero masked entries for actual model input
+    y_obs_scaled = y_obs_scaled * mask.astype(np.float32)
+
+    x_tokens = np.stack([y_obs_scaled, mask.astype(np.float32)], axis=-1).astype(np.float32)
 
     print(f"\nscaled theta shape: {theta_scaled.shape}")
     print(f"scaled y_obs shape: {y_obs_scaled.shape}")
