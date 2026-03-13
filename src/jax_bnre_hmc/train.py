@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
 
 import jax
 import jax.numpy as jnp
 import optax
+from flax import linen as nn
 from flax.training import train_state
 
 from .checkpointing import ensure_dirs, get_run_dir, save_best, save_latest
 from .data import make_batches, make_joint_and_marginal
 from .loss import bnre_balance_from_logits, nre_loss_bce_style_from_logits, nre_loss_from_logits
-from .model import RatioEstimatorMLP
 
 
 @dataclass(frozen=True)
@@ -34,7 +33,7 @@ class TrainConfig:
     lr: float = 1e-3
     epochs: int = 2000
     batch_size: int = 1024
-    clip_max_norm: float | None = 5.0 
+    clip_max_norm: float | None = 5.0
     print_every: int = 200
     save_every: int = 200
     checkpoint_dirname: str = "checkpoints"
@@ -45,39 +44,31 @@ class TrainConfig:
 def create_train_state(
     rng: jax.Array,
     theta_dim: int,
-    x_dim: int,
-    hidden_dims: Sequence[int],
-    activation: str,
-    norm: str,
+    x_shape: tuple[int, ...],
+    model: nn.Module,
     lr: float,
     clip_max_norm: float | None,
-) -> tuple[RatioEstimatorMLP, train_state.TrainState]:
-    """Initialize model and training state with optimizer.
-    
+) -> train_state.TrainState:
+    """Initialize training state for an arbitrary ratio estimator model.
+
     Args:
         rng: Random key for parameter initialization.
         theta_dim: Dimensionality of the parameter space.
-        x_dim: Dimensionality of the observation space.
-        hidden_dims: Sequence of hidden layer dimensions for the MLP.
-        activation: Activation function name (e.g., "tanh", "relu").
-        norm: Normalization type ("layernorm" or "none").
+        x_shape: Shape of a single observation, excluding batch dimension.
+            Examples:
+                - flat vector observations: (x_dim,)
+                - transformer token inputs: (N, 2)
+        model: Flax module with forward signature model(theta, x) -> logits.
         lr: Learning rate for the Adam optimizer.
         clip_max_norm: Maximum gradient norm for clipping. If None, no clipping.
-    
-    Returns:
-        A tuple containing:
-            - model: The initialized RatioEstimatorMLP model.
-            - state: Flax TrainState with initialized parameters and optimizer.
-    """
-    hidden_dims = tuple(int(d) for d in hidden_dims)  # Ensure tuple of ints
-    model = RatioEstimatorMLP(hidden_dims=hidden_dims, activation=activation, norm=norm)
 
-    # Create dummy data to initialize parameters
+    Returns:
+        Flax TrainState with initialized parameters and optimizer.
+    """
     dummy_theta = jnp.zeros((1, theta_dim), dtype=jnp.float32)
-    dummy_x = jnp.zeros((1, x_dim), dtype=jnp.float32)
+    dummy_x = jnp.zeros((1, *x_shape), dtype=jnp.float32)
     params = model.init(rng, dummy_theta, dummy_x)
 
-    # Create optimizer
     if clip_max_norm is not None:
         tx = optax.chain(
             optax.clip_by_global_norm(clip_max_norm),
@@ -85,8 +76,13 @@ def create_train_state(
         )
     else:
         tx = optax.adam(lr)
-    state = train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
-    return model, state
+
+    state = train_state.TrainState.create(
+        apply_fn=model.apply,
+        params=params,
+        tx=tx,
+    )
+    return state
 
 
 @jax.jit
@@ -105,7 +101,7 @@ def train_step(
     Args:
         state: Current training state containing model parameters and optimizer.
         theta: Parameter batch of shape (batch_size, theta_dim).
-        x: Observation batch of shape (batch_size, x_dim).
+        x: Observation batch of shape (batch_size, ...).
         rng: Random key for shuffling joint/marginal pairs.
         bnre_gamma: Weight for BNRE balance penalty. Set to 0.0 for standard NRE.
     
@@ -127,14 +123,14 @@ def train_step(
         nre_loss = nre_loss_from_logits(logits_joint, logits_marg)
         bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
         penalty, balance = bnre_balance_from_logits(logits_joint, logits_marg)
-        
-        # Always compute total_loss = nre_loss + bnre_gamma * penalty
-        # When bnre_gamma == 0.0, this equals nre_loss exactly
+
         total_loss = nre_loss + bnre_gamma * penalty
-        
+
         return total_loss, (bce_loss, penalty, balance)
 
-    (total_loss, (bce_loss, penalty, balance)), grads = jax.value_and_grad(loss_and_metric, has_aux=True)(state.params)
+    (total_loss, (bce_loss, penalty, balance)), grads = jax.value_and_grad(
+        loss_and_metric, has_aux=True
+    )(state.params)
     state = state.apply_gradients(grads=grads)
     return state, total_loss, bce_loss, penalty, balance
 
@@ -155,7 +151,7 @@ def validation_step(
     Args:
         state: Current training state containing model parameters.
         theta: Parameter batch of shape (batch_size, theta_dim).
-        x: Observation batch of shape (batch_size, x_dim).
+        x: Observation batch of shape (batch_size, ...).
         rng: Random key for shuffling joint/marginal pairs.
         bnre_gamma: Weight for BNRE balance penalty. Set to 0.0 for standard NRE.
     
@@ -175,11 +171,9 @@ def validation_step(
     nre_loss = nre_loss_from_logits(logits_joint, logits_marg)
     bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
     penalty, balance = bnre_balance_from_logits(logits_joint, logits_marg)
-    
-    # Always compute total_loss = nre_loss + bnre_gamma * penalty
-    # When bnre_gamma == 0.0, this equals nre_loss exactly
+
     total_loss = nre_loss + bnre_gamma * penalty
-    
+
     return total_loss, bce_loss, penalty, balance
 
 
@@ -188,9 +182,7 @@ def train(
     x_train: jnp.ndarray,
     theta_val: jnp.ndarray,
     x_val: jnp.ndarray,
-    model_hidden_dims: Sequence[int],
-    model_activation: str = "tanh",
-    model_norm: str = "layernorm",
+    model: nn.Module,
     cfg: TrainConfig = TrainConfig(),
 ) -> tuple[train_state.TrainState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Train a Neural Ratio Estimator with mini-batching and checkpointing.
@@ -203,12 +195,10 @@ def train(
     
     Args:
         theta_train: Training parameter samples of shape (n_train, theta_dim).
-        x_train: Training observation samples of shape (n_train, x_dim).
+        x_train: Training observation samples of shape (n_train, ...).
         theta_val: Validation parameter samples of shape (n_val, theta_dim).
-        x_val: Validation observation samples of shape (n_val, x_dim).
-        model_hidden_dims: Sequence of hidden layer dimensions for the MLP.
-        model_activation: Activation function name (default: "tanh").
-        model_norm: Normalization type, "layernorm" or "none" (default: "layernorm").
+        x_val: Validation observation samples of shape (n_val, ...).
+        model: Flax module with forward signature model(theta, x) -> logits.
         cfg: Training configuration (learning rate, epochs, batch size, etc.).
     
     Returns:
@@ -227,13 +217,11 @@ def train(
     rng = jax.random.PRNGKey(cfg.seed)
     rng_init, rng_train, rng_val = jax.random.split(rng, 3)
 
-    _, state = create_train_state(
+    state = create_train_state(
         rng=rng_init,
         theta_dim=theta_train.shape[1],
-        x_dim=x_train.shape[1],
-        hidden_dims=model_hidden_dims,
-        activation=model_activation,
-        norm=model_norm,
+        x_shape=tuple(x_train.shape[1:]),
+        model=model,
         lr=cfg.lr,
         clip_max_norm=cfg.clip_max_norm,
     )
@@ -242,23 +230,21 @@ def train(
     train_bce_losses = []
     val_losses = []
     val_bce_losses = []
-    
-    # Initialize checkpointing and early stopping
+
     best_val_loss = float("inf")
     best_epoch = 0
     run_dir = get_run_dir()
     latest_dir, best_dir = ensure_dirs(run_dir, cfg.checkpoint_dirname)
     latest_meta_path = run_dir / cfg.checkpoint_dirname / "latest_meta.json"
     best_meta_path = run_dir / cfg.checkpoint_dirname / "best_meta.json"
-    
+
     for epoch in range(cfg.epochs):
-        # Training: iterate over batches
         rng_train, rng_epoch = jax.random.split(rng_train)
         epoch_train_losses = []
         epoch_train_bce_losses = []
         epoch_train_penalties = []
         epoch_train_balances = []
-        
+
         for theta_batch, x_batch in make_batches(rng_epoch, theta_train, x_train, cfg.batch_size):
             rng_train, rng_step = jax.random.split(rng_train)
             state, batch_loss, batch_bce_loss, batch_penalty, batch_balance = train_step(
@@ -268,8 +254,7 @@ def train(
             epoch_train_bce_losses.append(batch_bce_loss)
             epoch_train_penalties.append(batch_penalty)
             epoch_train_balances.append(batch_balance)
-        
-        # Average losses over batches for this epoch
+
         train_loss = jnp.mean(jnp.stack(epoch_train_losses))
         train_bce_loss = jnp.mean(jnp.stack(epoch_train_bce_losses))
         train_penalty = jnp.mean(jnp.stack(epoch_train_penalties))
@@ -277,31 +262,28 @@ def train(
         train_losses.append(train_loss)
         train_bce_losses.append(train_bce_loss)
 
-        # Validation step (no mini-batching)
         rng_val, rng_val_step = jax.random.split(rng_val)
         val_loss, val_bce_loss, val_penalty, val_balance = validation_step(
             state, theta_val, x_val, rng_val_step, cfg.bnre_gamma
         )
-        # val_key_fixed = jax.random.PRNGKey(cfg.seed + 117)  # this is to verify the best model
-        # val_loss, val_bce_loss, val_penalty, val_balance = validation_step(state, theta_val, x_val, val_key_fixed, cfg.bnre_gamma)  # this is to verify the best model
         val_losses.append(val_loss)
         val_bce_losses.append(val_bce_loss)
-        
+
         val_loss_float = float(val_loss)
-        
-        # Checkpointing: save latest
+
         if cfg.save_every and cfg.save_every > 0 and (epoch + 1) % cfg.save_every == 0:
             save_latest(state, latest_dir, latest_meta_path, epoch + 1, val_loss_float)
-        
-        # Checkpointing: save best
+
         if val_loss_float < best_val_loss:
             best_val_loss = val_loss_float
             best_epoch = epoch + 1
             save_best(state.params, best_dir, best_meta_path, epoch + 1, val_loss_float)
-        
-        # Early stopping
+
         if cfg.stop_after_epochs is not None and (epoch + 1) - best_epoch >= cfg.stop_after_epochs:
-            print(f"\nEarly stopping: No improvement for {cfg.stop_after_epochs} epochs (best at epoch {best_epoch}, current epoch {epoch+1})\n")
+            print(
+                f"\nEarly stopping: No improvement for {cfg.stop_after_epochs} epochs "
+                f"(best at epoch {best_epoch}, current epoch {epoch+1})\n"
+            )
             break
 
         if (epoch + 1) % cfg.print_every == 0:
@@ -326,3 +308,4 @@ def train(
         jnp.stack(val_losses),
         jnp.stack(val_bce_losses),
     )
+    

@@ -20,6 +20,7 @@ from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import h5py
 
+from jax_bnre_hmc.model import RatioEstimatorMLP
 from jax_bnre_hmc.train import TrainConfig, train
 from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.checkpointing import load_best_params
@@ -77,14 +78,18 @@ def main(cfg: DictConfig):
     )
     print('\nTraining configuration created\nStarting training loop:')
 
+    model = RatioEstimatorMLP(
+        hidden_dims=tuple(cfg.model.hidden_dims),
+        activation=str(cfg.model.activation),
+        norm=str(cfg.model.norm),
+    )
+
     train_output = train(
         theta_train=theta_train,
         x_train=x_train,
         theta_val=theta_val,
         x_val=x_val,
-        model_hidden_dims=tuple(cfg.model.hidden_dims),
-        model_activation=str(cfg.model.activation),
-        model_norm=str(cfg.model.norm),
+        model=model,
         cfg=train_cfg,
     )
 

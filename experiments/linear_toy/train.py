@@ -18,6 +18,7 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
+from jax_bnre_hmc.model import RatioEstimatorMLP
 from jax_bnre_hmc.train import TrainConfig, train
 from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.checkpointing import load_best_params
@@ -84,7 +85,7 @@ def main(cfg: DictConfig):
         seed=int(cfg.seed),
         lr=float(cfg.train.lr),
         epochs=int(cfg.train.epochs),
-        bnre_lambda=float(cfg.train.bnre_lambda),
+        bnre_gamma=float(cfg.train.bnre_gamma),
         print_every=int(cfg.train.print_every),
         batch_size=int(cfg.train.batch_size),
         clip_max_norm=cfg.train.clip_max_norm,
@@ -93,14 +94,20 @@ def main(cfg: DictConfig):
         stop_after_epochs=cfg.train.stop_after_epochs,
     )
 
+    print('\nTraining configuration created\nStarting training loop:')
+
+    model = RatioEstimatorMLP(
+        hidden_dims=tuple(cfg.model.hidden_dims),
+        activation=str(cfg.model.activation),
+        norm=str(cfg.model.norm),
+    )
+
     train_output = train(
         theta_train=theta_train,
         x_train=x_train,
         theta_val=theta_val,
         x_val=x_val,
-        model_hidden_dims=tuple(cfg.model.hidden_dims),
-        model_activation=str(cfg.model.activation),
-        model_norm=str(cfg.model.norm),
+        model=model,
         cfg=train_cfg,
     )
 
