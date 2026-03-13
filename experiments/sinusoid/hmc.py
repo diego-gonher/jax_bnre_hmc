@@ -19,7 +19,8 @@ from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 model = RatioEstimatorMLP(hidden_dims=(50, 50, 50), activation="tanh", norm="layernorm")
 
 # 2) load params (PyTree) and get apply_fn
-best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/outputs/sinusoid/2026-02-01_13-13-38/checkpoints/best/'
+# best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/outputs/sinusoid/2026-02-01_13-13-38/checkpoints/best/'
+best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/outputs/sinusoid/2026-03-12_21-16-45/checkpoints/best/'
 
 # Output directory should be best_dir's parent's parent, and create it if it doesn't exist
 output_dir = '/'.join(best_dir.split('/')[:-3]) + '/hmc_results/'
@@ -29,7 +30,8 @@ params = load_best_params(best_dir=best_dir)   # point this at your Hydra run ch
 
 # 3) Load dataset and select mock observations
 # Load the dataset and preprocess it
-dataset_file = f'/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_masked_nsim20000_ntime50_seed117.h5'
+# dataset_file = f'/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_masked_nsim20000_ntime50_seed117.h5'
+dataset_file = f'/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_masked_nsim20000_ntime50_seed117.h5'
 
 print(f'\nLoading dataset from {dataset_file}')
 
@@ -56,7 +58,7 @@ with h5py.File(dataset_file, 'r') as f:
 # Randomly select N_OBSERVATIONS from the dataset for inference    
 N_OBSERVATIONS = 500
 
-# Split the dataset into train and validation sets, it must be the scaled versions
+# randomly select N_OBSERVATIONS with the train_test_split function
 print("\nSplitting dataset into train and validation sets...")
 _1, theta_true, _2, x_obs = train_test_split(theta_scaled, x_scaled, 
                                              test_size=N_OBSERVATIONS, 
@@ -77,7 +79,7 @@ for i in range(N_OBSERVATIONS):
     print(f"\nRunning observation {i+1}/{N_OBSERVATIONS}")
     # squeeze to get single observation
     x_obs_i = x_obs[i].squeeze()            # now shape (10,)
-    theta_true_i = theta_true[i].squeeze()  # shape (2,)
+    theta_true_i = theta_true[i].squeeze()  # shape (4,)
 
     # 4) log-ratio wrapper
     log_ratio = make_log_ratio_fn(model.apply, params, x_obs_i)
