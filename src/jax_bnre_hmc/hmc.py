@@ -50,17 +50,65 @@ def make_log_ratio_fn(
     params,
     x_obs: Array,
 ) -> Callable[[Array], Array]:
-    """Return a function log_ratio(theta) -> scalar.
+    """Create a compiled log-ratio function for a fixed observation.
 
-    apply_fn(params, theta_batch, x_batch) should return logits (B,).
+    Given a trained neural ratio estimator and a single observation x_obs,
+    this function returns a callable:
+
+        log_ratio(theta) -> scalar
+
+    that evaluates the learned log density ratio:
+
+        log r(theta, x_obs)
+
+    where r(theta, x) approximates p(x | theta) / p(x).
+
+    The returned function is JIT-compiled with JAX so that repeated
+    evaluations during HMC are efficient.
+
+    Args:
+        apply_fn:
+            Flax model apply function with signature
+
+                apply_fn(params, theta_batch, x_batch) -> logits
+
+            where logits has shape (B,) and represents the estimated
+            log-ratio for each batch element.
+
+        params:
+            Trained model parameters (Flax PyTree).
+
+        x_obs:
+            A single observed dataset. Shape depends on the model:
+
+            - MLP ratio estimator: (x_dim,)
+            - Transformer ratio estimator: (N_tokens, token_dim)
+
+    Returns:
+        A function
+
+            log_ratio(theta: Array) -> Array
+
+        that takes a single parameter vector of shape (D,) and returns a
+        scalar log-ratio value.
+
+    Notes:
+        - Internally the function reshapes inputs to batch size 1 because
+          the neural ratio estimator expects batched inputs.
+        - The function is JIT-compiled so the first call incurs a compilation
+          cost, but subsequent calls (e.g. during NUTS) are fast.
     """
     x_obs = jnp.asarray(x_obs, dtype=jnp.float32)
 
+    @jax.jit
     def log_ratio(theta: Array) -> Array:
         theta = jnp.asarray(theta, dtype=jnp.float32)
-        # shape to (1, D) and (1, X)
+
+        # Add batch dimension expected by the neural network
         logits = apply_fn(params, theta[None, :], x_obs[None, ...])
-        return jnp.squeeze(logits, axis=0)  # scalar
+
+        # Remove batch dimension -> scalar
+        return jnp.squeeze(logits, axis=0)
 
     return log_ratio
 
@@ -70,8 +118,67 @@ def make_potential_fn(
     prior: BoxPrior,
     x_obs: Array | None = None,   # kept for signature symmetry; not used if baked into log_ratio_fn
 ) -> Callable[[Array], Array]:
-    """Return a potential_fn(z) suitable for NUTS(potential_fn=...)."""
+    """Create a compiled potential function for NUTS in unconstrained space.
 
+    This function constructs the scalar potential energy function used by
+    Hamiltonian Monte Carlo. The sampler operates in an unconstrained
+    parameter space `z`, which is mapped to the bounded parameter space
+    `theta` defined by the prior.
+
+    Specifically:
+
+        z  --sigmoid-->  u in (0, 1)
+        u  --affine-->   theta in [low, high]
+
+    The potential energy corresponds to the negative log-posterior (up to
+    a constant):
+
+        U(z) = - log r(theta, x_obs) - log |det dtheta/dz|
+
+    where:
+        - log r(theta, x_obs) is the learned log density ratio
+        - the Jacobian term accounts for the change of variables from z to theta
+
+    The returned function is JIT-compiled so that repeated evaluations
+    during NUTS are efficient.
+
+    Args:
+        log_ratio_fn:
+            Function returning the scalar log density ratio
+
+                log_ratio_fn(theta) -> log r(theta, x_obs)
+
+            typically created by `make_log_ratio_fn`.
+
+        prior:
+            BoxPrior defining the lower and upper bounds of the parameter
+            space in which theta lives.
+
+        x_obs:
+            Unused argument kept for API symmetry with earlier versions
+            where the observation was passed directly to the potential.
+            The observation is now captured inside `log_ratio_fn`.
+
+    Returns:
+        A function
+
+            potential(z: Array) -> Array
+
+        that computes the scalar potential energy for a given unconstrained
+        parameter vector `z`. This function is suitable for use with
+
+            numpyro.infer.NUTS(potential_fn=potential)
+
+    Notes:
+        - The transformation `z -> theta` ensures that HMC operates in an
+          unconstrained space while respecting the box prior bounds.
+        - The log-determinant Jacobian term ensures the posterior density
+          is correctly adjusted under this transformation.
+        - The function is JIT-compiled, so the first call incurs compilation
+          overhead but subsequent evaluations during NUTS are fast.
+    """
+
+    @jax.jit
     def potential(z: Array) -> Array:
         theta, u = z_to_theta(z, prior)
         ladj = logabsdet_dtheta_dz(u, prior)
