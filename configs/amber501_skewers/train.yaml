@@ -1,0 +1,34 @@
+exp_name: amber501_skewers
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+
+seed: 0
+
+data:
+  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/tau_skewers_z5.00.hdf5
+  validation_fraction: 0.2
+  test_fraction: 0.2
+  n_train: 100000
+  n_val: 20000
+  n_test: 20000
+
+model:
+  hidden_dims: [256, 256, 256]
+  activation: tanh
+  norm: layernorm
+
+train:
+  lr: 0.0005
+  epochs: 1000
+  bnre_gamma: 100.0
+  batch_size: 256
+  print_every: 10
+  clip_max_norm: 5.00 # null for no clipping
+  save_every: 100 # save latest checkpoint every N epochs (0 or null to disable)
+  checkpoint_dirname: "checkpoints"
+  stop_after_epochs: 100 # early stopping patience (null to disable)
+
