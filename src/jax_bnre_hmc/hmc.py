@@ -191,3 +191,83 @@ def run_nuts(
     )
     mcmc.run(rng_key, init_params=init_z)
     return mcmc
+
+@jax.jit
+def points_in_hull(points: Array, equations: Array, tolerance: float = 1e-12) -> Array:
+    """
+    Batched convex hull membership test.
+
+    Args:
+        points:
+            Array of shape (N, D).
+        equations:
+            Hull facet equations of shape (n_facets, D+1), as returned by
+            scipy.spatial.ConvexHull.equations.
+        tolerance:
+            Numerical tolerance for the facet inequalities.
+
+    Returns:
+        Boolean mask of shape (N,), where True means the point is inside
+        the convex hull.
+    """
+    A = equations[:, :-1]   # (n_facets, D)
+    b = equations[:, -1]    # (n_facets,)
+    vals = points @ A.T + b[None, :]   # (N, n_facets)
+    return jnp.all(vals <= tolerance, axis=1)
+
+
+def sample_uniform_in_convex_hull(
+    key: Array,
+    prior: ConvexHullPrior,
+    n_samples: int,
+    batch_size: int = 4096,
+    tolerance: float = 1e-12,
+) -> Array:
+    """
+    Sample approximately uniformly from a convex hull using rejection sampling
+    from the hull bounding box.
+
+    Args:
+        key:
+            JAX PRNG key.
+        prior:
+            ConvexHullPrior defining the bounding box and hull equations.
+        n_samples:
+            Number of accepted samples to return.
+        batch_size:
+            Number of proposals drawn per rejection-sampling round.
+        tolerance:
+            Numerical tolerance for hull membership.
+
+    Returns:
+        samples:
+            Array of shape (n_samples, D).
+    """
+    if n_samples <= 0:
+        raise ValueError("n_samples must be positive")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+
+    accepted_chunks = []
+    n_collected = 0
+    dim = prior.low.shape[0]
+
+    while n_collected < n_samples:
+        key, subkey = jax.random.split(key)
+
+        proposals = jax.random.uniform(
+            subkey,
+            shape=(batch_size, dim),
+            minval=prior.low,
+            maxval=prior.high,
+            dtype=prior.low.dtype,
+        )
+
+        mask = points_in_hull(proposals, prior.equations, tolerance=tolerance)
+        accepted = proposals[mask]
+
+        if accepted.shape[0] > 0:
+            accepted_chunks.append(accepted)
+            n_collected += accepted.shape[0]
+
+    return jnp.concatenate(accepted_chunks, axis=0)[:n_samples]
