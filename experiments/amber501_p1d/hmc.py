@@ -20,8 +20,7 @@ from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 model = RatioEstimatorMLP(hidden_dims=(50, 50, 50), activation="tanh", norm="layernorm")
 
 # 2) load params (PyTree) and get apply_fn
-# best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/outputs/sinusoid/2026-02-01_13-13-38/checkpoints/best/'
-best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/outputs/amber501_p1d/2026-03-14_17-39-59/checkpoints/best/'
+best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/outputs/amber501_p1d/2026-03-14_22-01-12/checkpoints/best/'
 
 # Output directory should be best_dir's parent's parent, and create it if it doesn't exist
 output_dir = '/'.join(best_dir.split('/')[:-3]) + '/hmc_results/'

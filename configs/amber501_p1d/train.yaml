@@ -12,7 +12,7 @@ data:
   dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/mocks_z5.00_snr30.0.hdf5
   validation_fraction: 0.2
   test_fraction: 0.2
-  n_train: 250000
+  n_train: 500000
   n_val: 50000
   n_test: 50000
 
@@ -24,7 +24,7 @@ model:
 train:
   lr: 0.0005
   epochs: 1000
-  bnre_gamma: 100.0
+  bnre_gamma: 1000.0
   batch_size: 128
   print_every: 10
   clip_max_norm: 5.00 # null for no clipping
