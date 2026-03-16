@@ -1,0 +1,26 @@
+# Path to the training run directory (contains config.yaml and checkpoints/)
+run_dir: outputs/2param/2026-01-29_18-23-10_gamma10.0
+
+output_dir: null
+
+data:
+  dataset_file: null  # set via CLI or override; HDF5 with theta, x
+
+num_chains: 4
+num_warmup: 4000
+num_samples: 4000
+
+n_observations: 500
+n_plots: 10
+seed: 17
+
+# Prior in scaled space (2param)
+prior:
+  type: box
+  low: [0.0, 0.0]
+  high: [1.0, 1.0]
+
+corner_labels: ["mfp", "<F>"]
+
+# For uniform_param_sampling_and_mock_selection
+observation_selection_seed: 17
