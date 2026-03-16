@@ -17,10 +17,10 @@ from jax_bnre_hmc.model import RatioEstimatorMLP
 from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 
 # 1) rebuild the model *architecture* (must match training config)
-model = RatioEstimatorMLP(hidden_dims=(256, 256, 256), activation="tanh", norm="layernorm")
+model = RatioEstimatorMLP(hidden_dims=(128, 128, 128), activation="tanh", norm="layernorm")
 
 # 2) load params (PyTree) and get apply_fn
-best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/outputs/amber501_skewers/2026-03-15_15-53-12/checkpoints/best/'
+best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/outputs/amber501_skewers/2026-03-15_17-02-48/checkpoints/best/'
 
 # Output directory should be best_dir's parent's parent, and create it if it doesn't exist
 output_dir = '/'.join(best_dir.split('/')[:-3]) + '/hmc_results/'
