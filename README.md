@@ -207,7 +207,67 @@ python experiments/linear_toy/train.py train.bnre_lambda=0.0 train.stop_after_ep
 
 ## Using the Trained Ratio Estimator in HMC
 
-The `experiments/*/hmc.py` scripts show how to plug the trained ratio estimator into a NumPyro-based HMC sampler. The typical pattern is:
+Inference is driven by **Hydra configs** in `configs/*/hmc.yaml`. Each `experiments/*/hmc.py` script loads its corresponding `hmc.yaml`, then:
+
+- Reads `run_dir/config.yaml` (the saved training config) to **rebuild the exact ratio-estimator architecture**.
+- Loads best parameters from `run_dir/<checkpoint_dirname>/best/` via Orbax.
+- Uses HMC/NUTS (NumPyro) to sample \(\theta\) conditioned on selected observations.
+
+### Quickstart: running inference with `hmc.yaml`
+
+1. Pick a completed training run directory (e.g. `outputs/sinusoid/2026-03-15_17-48-50`). It must contain:
+   - `config.yaml`
+   - `checkpoints/best/` (and/or `checkpoints/latest/`)
+
+2. Edit (or override) the experiment’s `configs/<exp>/hmc.yaml`. For example, `configs/sinusoid/hmc.yaml` contains:
+
+```yaml
+run_dir: outputs/sinusoid/2026-03-15_17-48-50
+output_dir: null
+
+data:
+  dataset_file: null  # set via CLI or override
+
+num_chains: 4
+num_warmup: 4000
+num_samples: 4000
+
+n_observations: 500
+n_plots: 25
+seed: 2401
+
+prior:
+  type: box
+  low: [-1.0, -1.0, -1.0, -1.0]
+  high: [1.0, 1.0, 1.0, 1.0]
+```
+
+3. Run the HMC script, overriding any values you want. Examples:
+
+```bash
+# Sinusoid: point to run_dir and dataset_file
+python experiments/sinusoid/hmc.py \
+  run_dir=outputs/sinusoid/2026-03-15_17-48-50 \
+  data.dataset_file=/absolute/path/to/sinusoid_noisy_masked_*.h5
+
+# Linear toy: simulate observations (dataset_file stays null)
+python experiments/linear_toy/hmc.py run_dir=outputs/linear_toy/<run_timestamp>
+```
+
+By default, if `output_dir: null`, results are written to `run_dir/hmc_results/`.
+
+### What `hmc.yaml` controls
+
+- **`run_dir`**: Which trained estimator to load (architecture from `run_dir/config.yaml`, params from `run_dir/<checkpoint_dirname>/best/`).  
+- **`data.dataset_file`**: Where to load inference observations (HDF5) for file-based experiments.  
+- **`num_chains`, `num_warmup`, `num_samples`**: NUTS/HMC settings.  
+- **`n_observations`, `seed`**: How many observations to run and how they are selected.  
+- **`n_plots`, `corner_labels`**: Plotting configuration.  
+- **`prior.*`**: Prior bounds/shape used by HMC (box prior in most experiments; convex-hull prior for amber501 examples).
+
+### Typical pattern (under the hood)
+
+The typical inference pattern is:
 
 - Load the **best** parameters with `load_best_params`.  
 - Reconstruct the same model architecture as during training.  
@@ -221,3 +281,24 @@ For concrete code, see:
 - `experiments/2param/hmc.py`
 
 These examples illustrate how to move from simulation-based training (BNRE) to full Bayesian inference (HMC) with the learned ratio estimator.
+
+---
+
+## Transformer ratio estimator for missing 1D data (masked observations)
+
+The `sinusoid_transformer` experiment provides a ratio estimator that handles **missing values** in 1D observations under the assumption that every observation lives on the **same grid** (e.g. time bins), but some entries can be invalid/missing.
+
+Representation:
+
+- Observation values: \(y = (y_1, \dots, y_T)\)
+- Mask: \(m = (m_1, \dots, m_T)\), where \(m_i = 1\) if \(y_i\) is valid and \(0\) otherwise
+
+The model consumes a token sequence of shape `(T, 2)` with tokens \([y_i, m_i]\). In the training script, masked entries are:
+
+- filled only for scaling (using per-timepoint mean over valid entries),
+- then **zeroed** in the actual model input, while the mask channel indicates validity.
+
+See:
+
+- `experiments/sinusoid_transformer/train.py` for preprocessing and tokenization into `x_tokens`.
+- `configs/sinusoid_transformer/hmc.yaml` and `experiments/sinusoid_transformer/hmc.py` for inference using the same representation.

@@ -4,7 +4,7 @@ run_dir: outputs/amber501_skewers/2026-03-15_17-02-48
 output_dir: null
 
 data:
-  dataset_file: null  # set via CLI or override; HDF5 with params, tau_skewers
+  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/tau_skewers_z5.00.hdf5  # set via CLI or override; HDF5 with params, tau_skewers
 
 num_chains: 4
 num_warmup: 4000
