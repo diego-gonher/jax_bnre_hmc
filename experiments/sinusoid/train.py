@@ -33,9 +33,10 @@ def main(cfg: DictConfig):
     key = jax.random.PRNGKey(int(cfg.seed))
 
     # Load the dataset and preprocess it
-    # dataset_file = f'/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_masked_nsim20000_ntime50_seed117.h5'
-    dataset_file = f'/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_masked_nsim20000_ntime50_seed117.h5'
-    
+    dataset_file = cfg.data.get("dataset_file")
+    if dataset_file is None:
+        raise ValueError("data.dataset_file must be set for sinusoid experiment (path to HDF5 with 'theta' and 'y_obs')")
+    dataset_file = str(dataset_file)
     print(f'\nLoading dataset from {dataset_file}')
 
     with h5py.File(dataset_file, 'r') as f:

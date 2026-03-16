@@ -9,6 +9,7 @@ hydra:
 seed: 0
 
 data:
+  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/2param/twoparam_mocks_z5.50.hdf5  # path to HDF5 with theta, x; null = must set via CLI or override
   validation_fraction: 0.2
 
 model:

@@ -33,8 +33,10 @@ def main(cfg: DictConfig):
     key = jax.random.PRNGKey(int(cfg.seed))
 
     # Load the dataset and preprocess it
-    dataset_file = f'/Users/diegogonzalez/Desktop/models/imported_models/twoparam_mocks_z5.50.hdf5'
-
+    dataset_file = cfg.data.get("dataset_file")
+    if dataset_file is None:
+        raise ValueError("data.dataset_file must be set for 2param experiment (path to HDF5 with 'theta' and 'x')")
+    dataset_file = str(dataset_file)
     print(f'\nLoading dataset from {dataset_file}')
 
     with h5py.File(dataset_file, 'r') as f:

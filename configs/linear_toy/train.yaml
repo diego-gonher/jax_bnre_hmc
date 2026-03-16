@@ -15,6 +15,7 @@ prior:
   b_high: 1.0
 
 data:
+  dataset_file: null  # null = simulate data for this example toy dataset
   n_simulations: 1024
   n_points: 10
   sigma: 0.1

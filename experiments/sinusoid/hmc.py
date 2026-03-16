@@ -20,7 +20,7 @@ model = RatioEstimatorMLP(hidden_dims=(50, 50, 50), activation="tanh", norm="lay
 
 # 2) load params (PyTree) and get apply_fn
 # best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/jax_bnre_hmc/jax_bnre_hmc/outputs/sinusoid/2026-02-01_13-13-38/checkpoints/best/'
-best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/outputs/sinusoid/2026-03-12_21-16-45/checkpoints/best/'
+best_dir = '/Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/outputs/sinusoid/2026-03-15_17-48-50/checkpoints/best/'
 
 # Output directory should be best_dir's parent's parent, and create it if it doesn't exist
 output_dir = '/'.join(best_dir.split('/')[:-3]) + '/hmc_results/'
