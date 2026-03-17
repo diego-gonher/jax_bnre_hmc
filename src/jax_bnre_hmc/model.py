@@ -337,4 +337,210 @@ class RatioEstimatorTransformer(nn.Module):
 
         logit = nn.Dense(1)(h_head)
         return jnp.squeeze(logit, axis=-1)
+
+
+class ConvResidualBlock1D(nn.Module):
+    """Residual 1D convolutional block for masked sequence features.
+
+    This block applies two Conv1D layers with optional LayerNorm and activation,
+    followed by a residual connection. It expects inputs of shape (B, N, C_in)
+    and returns outputs of shape (B, N, C_out).
+
+    The binary mask ``m`` (shape (B, N, 1)) is used only to re-apply masking
+    after the residual addition, so that invalid positions stay suppressed.
+
+    Attributes:
+        out_channels: Number of output channels for the block.
+        kernel_size: Convolution kernel size.
+        dilation: Dilation factor for the convolutions.
+        activation: Activation function name ("tanh", "relu", "gelu", or "silu").
+        norm: Normalization type, either "layernorm" or "none".
+        dropout_rate: Dropout rate applied after the second conv (0.0 disables).
+    """
+
+    out_channels: int
+    kernel_size: int = 5
+    dilation: int = 1
+    activation: str = "gelu"
+    norm: str = "layernorm"  # "layernorm" or "none"
+    dropout_rate: float = 0.0
+
+    def setup(self):
+        self.act = get_activation(self.activation)
+
+    @nn.compact
+    def __call__(self, h: jnp.ndarray, m: jnp.ndarray) -> jnp.ndarray:
+        """Apply the residual 1D convolutional block.
+
+        Args:
+            h: Input features of shape (B, N, C_in).
+            m: Mask of shape (B, N, 1) with values in {0, 1}.
+
+        Returns:
+            Output features of shape (B, N, C_out) with residual connection applied
+            and masked by ``m``.
+        """
+        if h.ndim != 3:
+            raise ValueError(f"h must have shape (B, N, C), got {h.shape}")
+        if m.ndim != 3 or m.shape[-1] != 1 or m.shape[:2] != h.shape[:2]:
+            raise ValueError(
+                f"m must have shape (B, N, 1) matching h's (B, N), got {m.shape} vs {h.shape}"
+            )
+
+        residual = h
+        y = h
+
+        if self.norm == "layernorm":
+            y = nn.LayerNorm()(y)
+        y = self.act(y)
+        y = nn.Conv(
+            features=self.out_channels,
+            kernel_size=(self.kernel_size,),
+            padding="SAME",
+            kernel_dilation=(self.dilation,),
+        )(y)
+
+        if self.norm == "layernorm":
+            y = nn.LayerNorm()(y)
+        y = self.act(y)
+        y = nn.Conv(
+            features=self.out_channels,
+            kernel_size=(self.kernel_size,),
+            padding="SAME",
+            kernel_dilation=(self.dilation,),
+        )(y)
+
+        if self.dropout_rate > 0.0:
+            # Deterministic dropout (scaling only) to avoid requiring RNGs in apply_fn.
+            y = nn.Dropout(rate=self.dropout_rate, deterministic=True)(y)
+
+        # Project residual if channel dimensions differ.
+        if residual.shape[-1] != self.out_channels:
+            residual = nn.Conv(
+                features=self.out_channels,
+                kernel_size=(1,),
+                padding="SAME",
+            )(residual)
+
+        out = residual + y
+        # # Re-apply mask to keep invalid positions suppressed.
+        # out = out * m
+        return out
+
+
+class RatioEstimatorCNN1D(nn.Module):
+    """Mask-aware 1D CNN ratio estimator for fixed-grid observations.
+
+    This model expects observations ``x_tokens`` with shape (B, N, 2), where each
+    token is ``[y_i, m_i]`` with:
+        - y_i: scaled measurement
+        - m_i: mask (1.0 for valid / unmasked, 0.0 for masked)
+
+    The model:
+        1. Applies a stack of residual 1D convolutional blocks over the sequence,
+           re-applying the mask after each block.
+        2. Performs mask-aware global mean pooling over the sequence dimension.
+        3. Concatenates the pooled CNN features with theta.
+        4. Passes the concatenated vector through an MLP head to produce a scalar logit.
+
+    Attributes:
+        conv_channels: Output channels for each residual conv block.
+        kernel_sizes: Kernel sizes for each residual conv block.
+        dilations: Dilation factors for each residual conv block.
+        conv_activation: Activation function for the conv blocks.
+        conv_norm: Normalization type for conv blocks ("layernorm" or "none").
+        conv_dropout_rate: Dropout rate in conv blocks (0.0 disables).
+        head_hidden_dims: Hidden dimensions of the MLP head.
+        head_activation: Activation function for the MLP head.
+        head_norm: Normalization type for the MLP head ("layernorm" or "none").
+        eps: Small constant for numerical stability in masked pooling.
+    """
+
+    conv_channels: tuple[int, ...] = (32, 64, 64, 128)
+    kernel_sizes: tuple[int, ...] = (5, 5, 5, 5)
+    dilations: tuple[int, ...] = (1, 2, 4, 8)
+    conv_activation: str = "gelu"
+    conv_norm: str = "layernorm"
+    conv_dropout_rate: float = 0.0
+
+    head_hidden_dims: tuple[int, ...] = (128, 128, 64)
+    head_activation: str = "tanh"
+    head_norm: str = "layernorm"
+
+    eps: float = 1e-8
+
+    def setup(self):
+        # Validate activations early.
+        self.conv_act = get_activation(self.conv_activation)
+        self.head_act = get_activation(self.head_activation)
+
+        if not (
+            len(self.conv_channels)
+            == len(self.kernel_sizes)
+            == len(self.dilations)
+        ):
+            raise ValueError(
+                "conv_channels, kernel_sizes, and dilations must have the same length "
+                f"got {len(self.conv_channels)}, {len(self.kernel_sizes)}, "
+                f"{len(self.dilations)}."
+            )
+
+    @nn.compact
+    def __call__(self, theta: jnp.ndarray, x_tokens: jnp.ndarray) -> jnp.ndarray:
+        """Forward pass.
+
+        Args:
+            theta: Parameter batch of shape (B, theta_dim).
+            x_tokens: Observation batch of shape (B, N, 2), tokens [y_i, m_i].
+
+        Returns:
+            Logits of shape (B,).
+        """
+        if x_tokens.ndim != 3:
+            raise ValueError(f"x_tokens must have shape (B, N, 2), got {x_tokens.shape}")
+        if x_tokens.shape[-1] != 2:
+            raise ValueError(
+                f"x_tokens must have last dimension 2 for [y_i, m_i], got {x_tokens.shape}"
+            )
+
+        x_tokens = jnp.asarray(x_tokens, dtype=jnp.float32)
+
+        # Extract channels: y (measurement) and m (mask in {0,1}).
+        y = x_tokens[..., 0:1]
+        m = x_tokens[..., 1:2]
+
+        # Defensively zero out masked values.
+        y = y * m
+
+        # Two-channel representation [y, m].
+        h = jnp.concatenate([y, m], axis=-1)  # (B, N, 2)
+
+        # Conv tower: stack of residual 1D conv blocks, re-applying mask each time.
+        for out_ch, k, d in zip(self.conv_channels, self.kernel_sizes, self.dilations):
+            h = ConvResidualBlock1D(
+                out_channels=out_ch,
+                kernel_size=int(k),
+                dilation=int(d),
+                activation=self.conv_activation,
+                norm=self.conv_norm,
+                dropout_rate=self.conv_dropout_rate,
+            )(h, m)
+
+        # Mask-aware global mean pooling over sequence dimension.
+        m_float = m.squeeze(-1).astype(jnp.float32)  # (B, N)
+        denom = jnp.sum(m_float, axis=1, keepdims=True) + self.eps  # (B, 1)
+        pooled = jnp.sum(h * m_float[..., None], axis=1) / denom  # (B, C_last)
+
+        # Concatenate theta with pooled CNN features.
+        h_head = jnp.concatenate([theta, pooled], axis=-1)
+
+        # MLP head.
+        for d in self.head_hidden_dims:
+            h_head = nn.Dense(d)(h_head)
+            if self.head_norm == "layernorm":
+                h_head = nn.LayerNorm()(h_head)
+            h_head = self.head_act(h_head)
+
+        logit = nn.Dense(1)(h_head)
+        return jnp.squeeze(logit, axis=-1)
         

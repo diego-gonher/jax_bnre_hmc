@@ -1,0 +1,36 @@
+exp_name: sinusoid_cnn
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+
+seed: 0
+
+data:
+  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_with_masks.h5
+
+model:
+  conv_channels: [32, 64, 64, 128]
+  kernel_sizes: [5, 5, 5, 5]
+  dilations: [1, 2, 4, 8]
+  conv_activation: gelu
+  conv_norm: layernorm
+  conv_dropout_rate: 0.0
+
+  head_hidden_dims: [128, 128, 64]
+  head_activation: tanh
+  head_norm: layernorm
+
+train:
+  lr: 0.0005
+  epochs: 500
+  bnre_gamma: 1000.0
+  batch_size: 128
+  print_every: 1
+  clip_max_norm: 5.0
+  save_every: 50
+  checkpoint_dirname: "checkpoints"
+  stop_after_epochs: 50
+
