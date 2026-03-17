@@ -9,7 +9,7 @@ hydra:
 seed: 0
 
 data:
-  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/tau_skewers_z5.00_no_masks.hdf5
+  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/tau_skewers_z5.00_with_masks_miniset.hdf5
 
 model:
   d_model: 16
@@ -24,11 +24,11 @@ model:
 
 train:
   lr: 0.0005
-  epochs: 1000
+  epochs: 250
   bnre_gamma: 500.0
   batch_size: 256
   print_every: 1
   clip_max_norm: 5.00 # null for no clipping
-  save_every: 100 # save latest checkpoint every N epochs (0 or null to disable)
+  save_every: 50 # save latest checkpoint every N epochs (0 or null to disable)
   checkpoint_dirname: "checkpoints"
   stop_after_epochs: 100 # early stopping patience (null to disable)
