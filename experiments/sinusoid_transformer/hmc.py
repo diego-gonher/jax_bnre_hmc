@@ -9,6 +9,7 @@ import numpyro
 import matplotlib.pyplot as plt
 import corner
 import jax
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from omegaconf import DictConfig, OmegaConf
 from sklearn.preprocessing import MinMaxScaler
@@ -76,7 +77,7 @@ def main(cfg: DictConfig):
         )
 
     # Fit scalers on train (same logic as train.py)
-    mask_train = mask_train_raw.astype(np.float32)
+    mask_train = mask_train_raw.astype(np.float64)
     valid_train = mask_train > 0.5
     valid_counts_train = np.sum(valid_train, axis=0)
     valid_sums_train = np.sum(x_train_raw * valid_train, axis=0)
@@ -89,17 +90,17 @@ def main(cfg: DictConfig):
     y_scaler.fit_transform(y_train_filled)
 
     # Transform test split
-    mask_test = mask_test_raw.astype(np.float32)
+    mask_test = mask_test_raw.astype(np.float64)
     valid_test = mask_test > 0.5
     valid_counts_test = np.sum(valid_test, axis=0)
     valid_sums_test = np.sum(x_test_raw * valid_test, axis=0)
     col_means_test = valid_sums_test / np.maximum(valid_counts_test, 1)
     y_test_filled = np.where(valid_test, x_test_raw, col_means_test[None, :])
 
-    theta_test_scaled = theta_scaler.transform(theta_test_raw).astype(np.float32)
-    y_test_scaled = y_scaler.transform(y_test_filled).astype(np.float32)
+    theta_test_scaled = theta_scaler.transform(theta_test_raw).astype(np.float64)
+    y_test_scaled = y_scaler.transform(y_test_filled).astype(np.float64)
     y_test_scaled = y_test_scaled * mask_test
-    x_test_tokens = np.stack([y_test_scaled, mask_test], axis=-1).astype(np.float32)
+    x_test_tokens = np.stack([y_test_scaled, mask_test], axis=-1).astype(np.float64)
 
     n_obs = int(cfg.n_observations)
     seed = int(cfg.seed)
@@ -112,8 +113,8 @@ def main(cfg: DictConfig):
     x_obs = x_test_tokens[indices]
 
     prior = BoxPrior(
-        low=jnp.array(cfg.prior.low, dtype=jnp.float32),
-        high=jnp.array(cfg.prior.high, dtype=jnp.float32),
+        low=jnp.array(cfg.prior.low, dtype=jnp.float64),
+        high=jnp.array(cfg.prior.high, dtype=jnp.float64),
     )
 
     num_chains = int(cfg.num_chains)
@@ -121,15 +122,15 @@ def main(cfg: DictConfig):
     print("Starting inference")
     for i in range(n_obs):
         print(f"\nRunning observation {i+1}/{n_obs}")
-        x_obs_i = jnp.asarray(x_obs[i], dtype=jnp.float32)
+        x_obs_i = jnp.asarray(x_obs[i], dtype=jnp.float64)
         assert jnp.sum(x_obs_i[:, 1] > 0.5) > 0, f"Obs {i} has no valid tokens."
         log_ratio = make_log_ratio_fn(model.apply, params, x_obs_i)
         potential = make_potential_fn(log_ratio, prior)
-        test_grad = jax.grad(log_ratio)(jnp.asarray(theta_true[i], dtype=jnp.float32))
+        test_grad = jax.grad(log_ratio)(jnp.asarray(theta_true[i], dtype=jnp.float64))
         if not bool(jnp.all(jnp.isfinite(test_grad))):
             raise ValueError(f"Non-finite log_ratio gradient for observation {i}")
         D = prior.low.shape[0]
-        init_z = jnp.zeros((num_chains, D), dtype=jnp.float32)
+        init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
         mcmc = run_nuts(
             potential_fn=potential,
             rng_key=jax.random.PRNGKey(seed + i),
@@ -176,8 +177,8 @@ def main(cfg: DictConfig):
     references = jax.random.uniform(
         subkey,
         shape=(n_obs, len(cfg.prior.low)),
-        minval=jnp.array(cfg.prior.low, dtype=jnp.float32),
-        maxval=jnp.array(cfg.prior.high, dtype=jnp.float32),
+        minval=jnp.array(cfg.prior.low, dtype=jnp.float64),
+        maxval=jnp.array(cfg.prior.high, dtype=jnp.float64),
     )
     ecp, alpha_grid = run_tarp_jax(
         posterior_samples=posterior_samples_tarp,

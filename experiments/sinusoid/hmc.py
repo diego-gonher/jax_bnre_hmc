@@ -4,6 +4,7 @@ from pathlib import Path
 
 import hydra
 import jax
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -64,8 +65,8 @@ def main(cfg: DictConfig):
     theta_scaler.fit(theta_train_raw)
     x_scaler.fit(x_train_raw)
 
-    theta_test = np.asarray(theta_scaler.transform(theta_test_raw), dtype=np.float32)
-    x_test = np.asarray(x_scaler.transform(x_test_raw), dtype=np.float32)
+    theta_test = np.asarray(theta_scaler.transform(theta_test_raw), dtype=np.float64)
+    x_test = np.asarray(x_scaler.transform(x_test_raw), dtype=np.float64)
 
     print(f"theta_test shape (scaled): {theta_test.shape}")
     print(f"x_test shape (scaled):     {x_test.shape}")
@@ -84,8 +85,8 @@ def main(cfg: DictConfig):
     x_obs = x_test[indices]
 
     prior = BoxPrior(
-        low=jnp.array(cfg.prior.low, dtype=jnp.float32),
-        high=jnp.array(cfg.prior.high, dtype=jnp.float32),
+        low=jnp.array(cfg.prior.low, dtype=jnp.float64),
+        high=jnp.array(cfg.prior.high, dtype=jnp.float64),
     )
 
     num_chains = int(cfg.num_chains)
@@ -97,7 +98,7 @@ def main(cfg: DictConfig):
         log_ratio = make_log_ratio_fn(model.apply, params, x_obs_i)
         potential = make_potential_fn(log_ratio, prior)
         D = prior.low.shape[0]
-        init_z = jnp.zeros((num_chains, D), dtype=jnp.float32)
+        init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
         mcmc = run_nuts(
             potential,
             jax.random.PRNGKey(seed + i),
@@ -149,8 +150,8 @@ def main(cfg: DictConfig):
     references = jax.random.uniform(
         subkey,
         shape=(n_obs, len(cfg.prior.low)),
-        minval=jnp.array(cfg.prior.low, dtype=jnp.float32),
-        maxval=jnp.array(cfg.prior.high, dtype=jnp.float32),
+        minval=jnp.array(cfg.prior.low, dtype=jnp.float64),
+        maxval=jnp.array(cfg.prior.high, dtype=jnp.float64),
     )
     ecp, alpha_grid = run_tarp_jax(
         posterior_samples=posterior_samples,

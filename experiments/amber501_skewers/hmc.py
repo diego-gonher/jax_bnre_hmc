@@ -5,6 +5,7 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import jax
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,14 +17,8 @@ from sklearn.model_selection import train_test_split
 from scipy.spatial import ConvexHull
 
 from jax_bnre_hmc.checkpointing import load_best_params
-from jax_bnre_hmc.hmc import (
-    ConvexHullPrior,
-    make_log_ratio_fn,
-    make_potential_fn,
-    run_nuts,
-    z_to_theta,
-    sample_uniform_in_convex_hull,
-)
+from jax_bnre_hmc.datasets import load_hdf5_dataset
+from jax_bnre_hmc.hmc import ConvexHullPrior, make_log_ratio_fn, make_potential_fn, run_nuts, z_to_theta, sample_uniform_in_convex_hull
 from jax_bnre_hmc.model import RatioEstimatorMLP
 from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 
@@ -35,7 +30,8 @@ def main(cfg: DictConfig):
     dataset_file = cfg.data.get("dataset_file")
     if dataset_file is None:
         raise ValueError(
-            "data.dataset_file must be set for amber501_skewers HMC (path to HDF5 with 'params', 'tau_skewers')"
+            "data.dataset_file must be set for sinusoid HMC "
+            "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
         )
     dataset_file = str(dataset_file)
 
@@ -55,56 +51,32 @@ def main(cfg: DictConfig):
     params = load_best_params(best_dir=best_dir)
 
     print(f"\nLoading dataset from {dataset_file}")
-    test_frac = float(cfg.get("data_split_test_fraction", 0.2))
-    val_frac = float(cfg.get("data_split_validation_fraction", 0.2))
+    loaded = load_hdf5_dataset(dataset_file, validate=True)
+    splits = loaded.splits
 
-    with h5py.File(dataset_file, "r") as f:
-        params_all = f["params"][:, :4]
-        mocks = f["tau_skewers"][:]
-
-    theta_train, theta_test, x_train, x_test = train_test_split(
-        params_all, mocks, test_size=test_frac, random_state=152637
-    )
-    theta_train, theta_val, x_train, x_val = train_test_split(
-        theta_train, x_train, test_size=val_frac, random_state=152637
-    )
-
-    def expand_theta_mock_pairs(theta, x):
-        n_theta, n_mocks, x_dim = x.shape
-        theta_pairs = np.repeat(theta, n_mocks, axis=0)
-        x_pairs = x.reshape(n_theta * n_mocks, x_dim)
-        return theta_pairs, x_pairs
-
-    theta_train_pairs, x_train_pairs = expand_theta_mock_pairs(theta_train, x_train)
-    theta_val_pairs, x_val_pairs = expand_theta_mock_pairs(theta_val, x_val)
-    theta_test_pairs, x_test_pairs = expand_theta_mock_pairs(theta_test, x_test)
-
-    _, theta_train, _, x_train = train_test_split(
-        theta_train_pairs, x_train_pairs, test_size=250000, random_state=47805
-    )
-    _, theta_val, _, x_val = train_test_split(
-        theta_val_pairs, x_val_pairs, test_size=50000, random_state=940856
-    )
-    _, theta_test, _, x_test = train_test_split(
-        theta_test_pairs, x_test_pairs, test_size=50000, random_state=496702
-    )
+    theta_train_raw = splits.theta_train
+    x_train_raw = splits.x_train
+    theta_val_raw = splits.theta_val
+    x_val_raw = splits.x_val
+    theta_test_raw = splits.theta_test
+    x_test_raw = splits.x_test
 
     theta_scaler = MinMaxScaler(feature_range=(-1, 1))
-    theta_scaler.fit(theta_train)
-    theta_train = theta_scaler.transform(theta_train)
-    theta_val = theta_scaler.transform(theta_val)
-    theta_test = theta_scaler.transform(theta_test)
+    theta_scaler.fit(theta_train_raw)
+    theta_train = theta_scaler.transform(theta_train_raw)
+    theta_val = theta_scaler.transform(theta_val_raw)
+    theta_test = theta_scaler.transform(theta_test_raw)
 
-    x_train = np.log1p(x_train)
-    x_val = np.log1p(x_val)
-    x_test = np.log1p(x_test)
+    x_train = np.log1p(x_train_raw)
+    x_val = np.log1p(x_val_raw)
+    x_test = np.log1p(x_test_raw)
     x_scaler = StandardScaler()
     x_scaler.fit(x_train)
     x_train = x_scaler.transform(x_train)
     x_val = x_scaler.transform(x_val)
     x_test = x_scaler.transform(x_test)
 
-    params_all_scaled = theta_scaler.transform(params_all)
+    params_all_scaled = theta_scaler.transform(np.concatenate((theta_train, theta_val, theta_test), axis=0))
     hull = ConvexHull(params_all_scaled)
     prior = ConvexHullPrior(
         low=jnp.asarray(hull.min_bound),
@@ -127,7 +99,7 @@ def main(cfg: DictConfig):
         log_ratio = make_log_ratio_fn(model.apply, params, x_obs_i)
         potential = make_potential_fn(log_ratio, prior, soft_hull=False)
         D = prior.low.shape[0]
-        init_z = jnp.zeros((num_chains, D), dtype=jnp.float32)
+        init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
         mcmc = run_nuts(
             potential,
             jax.random.PRNGKey(seed + i),
