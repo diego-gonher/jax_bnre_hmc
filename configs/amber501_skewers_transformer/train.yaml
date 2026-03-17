@@ -1,0 +1,34 @@
+exp_name: amber501_skewers_transformer
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
+
+seed: 0
+
+data:
+  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/tau_skewers_z5.00_no_masks.hdf5
+
+model:
+  d_model: 16
+  num_layers: 2
+  num_heads: 2
+  transformer_mlp_dim: 128
+  transformer_activation: gelu
+
+  hidden_dims: [64, 64, 64]
+  activation: tanh
+  norm: layernorm
+
+train:
+  lr: 0.0005
+  epochs: 1000
+  bnre_gamma: 500.0
+  batch_size: 256
+  print_every: 1
+  clip_max_norm: 5.00 # null for no clipping
+  save_every: 100 # save latest checkpoint every N epochs (0 or null to disable)
+  checkpoint_dirname: "checkpoints"
+  stop_after_epochs: 100 # early stopping patience (null to disable)
