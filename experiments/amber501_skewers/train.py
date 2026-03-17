@@ -21,11 +21,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 
+from jax_bnre_hmc.checkpointing import load_best_params
+from jax_bnre_hmc.data import make_joint_and_marginal
+from jax_bnre_hmc.datasets import load_hdf5_dataset
+from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorMLP
 from jax_bnre_hmc.train import TrainConfig, train
-from jax_bnre_hmc.data import make_joint_and_marginal
-from jax_bnre_hmc.checkpointing import load_best_params
-from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 
 
 @hydra.main(config_path="../../configs/amber501_skewers", config_name="train", version_base="1.3")
@@ -33,126 +34,72 @@ def main(cfg: DictConfig):
     # Set the seed
     key = jax.random.PRNGKey(int(cfg.seed))
 
-    # -------------------------------
-    # Load dataset and preprocess it
-    # -------------------------------
-    dataset_file = str(cfg.data.dataset_file)
+    # Load the dataset (pre-split) and preprocess it
+    dataset_file = cfg.data.get("dataset_file")
+    if dataset_file is None:
+        raise ValueError(
+            "data.dataset_file must be set for sinusoid experiment "
+            "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
+        )
+    dataset_file = str(dataset_file)
     print(f"\nLoading dataset from {dataset_file}")
 
-    with h5py.File(dataset_file, "r") as f:
-        # load the needed arrays
-        params = f['params'][:, :4]                  # (4509, 5)
-        mocks = f['tau_skewers'][:]      # (4509, 1000, 19)
+    loaded = load_hdf5_dataset(dataset_file, validate=True)
+    splits = loaded.splits
 
-        # Split by parameter combination first
-        theta_train, theta_test, x_train, x_test = train_test_split(
-            params,
-            mocks,
-            test_size=float(cfg.data.test_fraction),
-            random_state=152637,
-        )
+    theta_train_raw = splits.theta_train
+    x_train_raw = splits.x_train
+    theta_val_raw = splits.theta_val
+    x_val_raw = splits.x_val
+    theta_test_raw = splits.theta_test
+    x_test_raw = splits.x_test
 
-        theta_train, theta_val, x_train, x_val = train_test_split(
-            theta_train,
-            x_train,
-            test_size=float(cfg.data.validation_fraction),
-            random_state=152637,
-        )
+    print("\nLoaded dataset splits:")
+    print(f" - theta_train shape: {theta_train_raw.shape}")
+    print(f" - x_train shape:     {x_train_raw.shape}")
+    print(f" - theta_val shape:   {theta_val_raw.shape}")
+    print(f" - x_val shape:       {x_val_raw.shape}")
+    print(f" - theta_test shape:  {theta_test_raw.shape}")
+    print(f" - x_test shape:      {x_test_raw.shape}")
 
-        def expand_theta_mock_pairs(theta, x):
-            """
-            Convert:
-                theta: (n_theta, n_params)
-                x:     (n_theta, n_mocks, x_dim)
+    # use min max scalers on theta
+    # create min max scaler, symmetric around 0
+    theta_scaler = MinMaxScaler(feature_range=(-1,1))
+    theta_scaler.fit(theta_train_raw)
 
-            into:
-                theta_pairs: (n_theta * n_mocks, n_params)
-                x_pairs:     (n_theta * n_mocks, x_dim)
-            """
-            n_theta, n_mocks, x_dim = x.shape
-            n_params = theta.shape[1]
+    # Transform all splits using train-fitted scalers
+    theta_train = theta_scaler.transform(theta_train_raw)
+    theta_val   = theta_scaler.transform(theta_val_raw)
+    theta_test  = theta_scaler.transform(theta_test_raw)
 
-            theta_pairs = np.repeat(theta, n_mocks, axis=0)
-            x_pairs = x.reshape(n_theta * n_mocks, x_dim)
+    # plt.hist(theta_train.ravel())
+    # plt.show()
 
-            return theta_pairs, x_pairs
+    # use a combination of scalers to make x good
+    x_scaler_1 = np.log1p
+    x_scaler_2 = StandardScaler()
+    # x_scaler_3 = MinMaxScaler(feature_range=(-5,5)) 
 
+    # Transform x with first scaler
+    x_train = x_scaler_1(x_train_raw)
+    x_val   = x_scaler_1(x_val_raw)
+    x_test  = x_scaler_1(x_test_raw)
 
-        theta_train_pairs, x_train_pairs = expand_theta_mock_pairs(theta_train, x_train)
-        theta_val_pairs, x_val_pairs     = expand_theta_mock_pairs(theta_val, x_val)
-        theta_test_pairs, x_test_pairs   = expand_theta_mock_pairs(theta_test, x_test)
-        
+    # Transform all splits using train-fitted with second scaler
+    x_scaler_2.fit(x_train)
+    x_train = x_scaler_2.transform(x_train)
+    x_val   = x_scaler_2.transform(x_val)
+    x_test  = x_scaler_2.transform(x_test)
 
-        _1, theta_train, _2, x_train = train_test_split(
-            theta_train_pairs,
-            x_train_pairs,
-            test_size=int(cfg.data.n_train),
-            random_state=47805,
-        )
+    # # Transform all splits using train-fitted with third scaler
+    # x_scaler_3.fit(x_train)
+    # x_train = x_scaler_3.transform(x_train)
+    # x_val   = x_scaler_3.transform(x_val)
+    # x_test  = x_scaler_3.transform(x_test)
 
-        _1, theta_val, _2, x_val = train_test_split(
-            theta_val_pairs,
-            x_val_pairs,
-            test_size=int(cfg.data.n_val),
-            random_state=940856,
-        )
-
-        _1, theta_test, _2, x_test = train_test_split(
-            theta_test_pairs,
-            x_test_pairs,
-            test_size=int(cfg.data.n_test),
-            random_state=496702,
-        )
-
-        print(f'\nFinal dataset splits for SBI:')
-        print(f' - Train')
-        print(f'    - theta shape: {theta_train.shape}')
-        print(f'    - x shape: {x_train.shape}')
-        print(f' - Validation')
-        print(f'    - theta shape: {theta_val.shape}')
-        print(f'    - x shape: {x_val.shape}')
-        print(f' - Test')
-        print(f'    - theta shape: {theta_test.shape}')
-        print(f'    - x shape: {x_test.shape}\n')
-
-        # use min max scalers on theta
-        # create min max scaler, symmetric around 0
-        theta_scaler = MinMaxScaler(feature_range=(-1,1))
-        theta_scaler.fit(theta_train)
-
-        # Transform all splits using train-fitted scalers
-        theta_train = theta_scaler.transform(theta_train)
-        theta_val   = theta_scaler.transform(theta_val)
-        theta_test  = theta_scaler.transform(theta_test)
-
-        # plt.hist(theta_train.ravel())
-        # plt.show()
-
-        # use a combination of scalers to make x good
-        x_scaler_1 = np.log1p
-        x_scaler_2 = StandardScaler()
-        # x_scaler_3 = MinMaxScaler(feature_range=(-5,5)) 
-
-        # Transform x with first scaler
-        x_train = x_scaler_1(x_train)
-        x_val   = x_scaler_1(x_val)
-        x_test  = x_scaler_1(x_test)
-
-        # Transform all splits using train-fitted with second scaler
-        x_scaler_2.fit(x_train)
-        x_train = x_scaler_2.transform(x_train)
-        x_val   = x_scaler_2.transform(x_val)
-        x_test  = x_scaler_2.transform(x_test)
-
-        # # Transform all splits using train-fitted with third scaler
-        # x_scaler_3.fit(x_train)
-        # x_train = x_scaler_3.transform(x_train)
-        # x_val   = x_scaler_3.transform(x_val)
-        # x_test  = x_scaler_3.transform(x_test)
-
-        # n, bins, patches = plt.hist(x_train.ravel())
-        # plt.show()
-        # print(n, bins, patches)
+    # n, bins, patches = plt.hist(x_train.ravel())
+    # plt.show()
+    # print(n, bins, patches)
 
 
     train_cfg = TrainConfig(
