@@ -3,18 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
-import jax
-import jax.numpy as jnp
 import numpy as np
 import h5py
 import numpyro
 import matplotlib.pyplot as plt
 import corner
-from sklearn.model_selection import train_test_split
+import jax
+import jax.numpy as jnp
+from omegaconf import DictConfig, OmegaConf
 from sklearn.preprocessing import MinMaxScaler
 
 from jax_bnre_hmc.checkpointing import load_best_params
+from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.hmc import (
     BoxPrior,
     make_log_ratio_fn,
@@ -33,7 +33,8 @@ def main(cfg: DictConfig):
     dataset_file = cfg.data.get("dataset_file")
     if dataset_file is None:
         raise ValueError(
-            "data.dataset_file must be set for sinusoid_transformer HMC (path to HDF5 with 'theta', 'y_obs', 'mask')"
+            "data.dataset_file must be set for sinusoid_transformer HMC "
+            "(path to HDF5 with theta_train, x_train, x_train_mask; theta_test, x_test, x_test_mask; etc.)"
         )
     dataset_file = str(dataset_file)
 
@@ -59,29 +60,56 @@ def main(cfg: DictConfig):
     params = load_best_params(best_dir=best_dir)
 
     print(f"\nLoading dataset from {dataset_file}")
-    with h5py.File(dataset_file, "r") as f:
-        theta = f["theta"][:]
-        y_obs = f["y_obs"][:]
-        mask = f["mask"][:].astype(np.float32)
+    loaded = load_hdf5_dataset(dataset_file, validate=True)
+    splits = loaded.splits
 
-    valid = mask > 0.5
-    valid_counts = np.sum(valid, axis=0)
-    valid_sums = np.sum(y_obs * valid, axis=0)
-    col_means = valid_sums / np.maximum(valid_counts, 1)
-    y_obs_filled = np.where(valid, y_obs, col_means[None, :])
+    theta_train_raw = splits.theta_train
+    x_train_raw = splits.x_train
+    mask_train_raw = splits.mask_train
+    theta_test_raw = splits.theta_test
+    x_test_raw = splits.x_test
+    mask_test_raw = splits.mask_test
+
+    if mask_train_raw is None or mask_test_raw is None:
+        raise ValueError(
+            "Sinusoid transformer HMC requires x_train_mask and x_test_mask in the HDF5 file."
+        )
+
+    # Fit scalers on train (same logic as train.py)
+    mask_train = mask_train_raw.astype(np.float32)
+    valid_train = mask_train > 0.5
+    valid_counts_train = np.sum(valid_train, axis=0)
+    valid_sums_train = np.sum(x_train_raw * valid_train, axis=0)
+    col_means_train = valid_sums_train / np.maximum(valid_counts_train, 1)
+    y_train_filled = np.where(valid_train, x_train_raw, col_means_train[None, :])
 
     theta_scaler = MinMaxScaler(feature_range=(-1, 1))
     y_scaler = MinMaxScaler(feature_range=(-1, 1))
-    theta_scaled = theta_scaler.fit_transform(theta).astype(np.float32)
-    y_obs_scaled = y_scaler.fit_transform(y_obs_filled).astype(np.float32)
-    y_obs_scaled = y_obs_scaled * mask
-    x_tokens = np.stack([y_obs_scaled, mask], axis=-1).astype(np.float32)
+    theta_scaler.fit_transform(theta_train_raw)
+    y_scaler.fit_transform(y_train_filled)
+
+    # Transform test split
+    mask_test = mask_test_raw.astype(np.float32)
+    valid_test = mask_test > 0.5
+    valid_counts_test = np.sum(valid_test, axis=0)
+    valid_sums_test = np.sum(x_test_raw * valid_test, axis=0)
+    col_means_test = valid_sums_test / np.maximum(valid_counts_test, 1)
+    y_test_filled = np.where(valid_test, x_test_raw, col_means_test[None, :])
+
+    theta_test_scaled = theta_scaler.transform(theta_test_raw).astype(np.float32)
+    y_test_scaled = y_scaler.transform(y_test_filled).astype(np.float32)
+    y_test_scaled = y_test_scaled * mask_test
+    x_test_tokens = np.stack([y_test_scaled, mask_test], axis=-1).astype(np.float32)
 
     n_obs = int(cfg.n_observations)
     seed = int(cfg.seed)
-    _, theta_true, _, x_obs = train_test_split(
-        theta_scaled, x_tokens, test_size=n_obs, random_state=seed
-    )
+    rng = np.random.default_rng(seed)
+    n_test = x_test_tokens.shape[0]
+    if n_obs > n_test:
+        raise ValueError(f"n_observations ({n_obs}) must be <= test set size ({n_test}).")
+    indices = rng.choice(n_test, size=n_obs, replace=False)
+    theta_true = theta_test_scaled[indices]
+    x_obs = x_test_tokens[indices]
 
     prior = BoxPrior(
         low=jnp.array(cfg.prior.low, dtype=jnp.float32),
@@ -178,7 +206,7 @@ def main(cfg: DictConfig):
         f.create_dataset("posterior_samples", data=np.array(posterior_samples_tarp))
         f.create_dataset("theta_true", data=np.array(theta_true))
         f.create_dataset("x_obs", data=np.array(x_obs))
-    print(f"Saved posterior samples to {output_dir}posterior_samples.h5")
+    print(f"Saved posterior samples to {output_dir / 'posterior_samples.h5'}")
 
 
 if __name__ == "__main__":

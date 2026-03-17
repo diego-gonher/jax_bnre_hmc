@@ -3,21 +3,23 @@ from __future__ import annotations
 from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
-import h5py
+import numpy as np
 import numpyro
+import h5py
+from omegaconf import DictConfig, OmegaConf
 import corner
+
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import train_test_split
 
 from jax_bnre_hmc.checkpointing import load_best_params
+from jax_bnre_hmc.datasets import load_hdf5_dataset
+from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 from jax_bnre_hmc.hmc import BoxPrior, make_log_ratio_fn, make_potential_fn, run_nuts, z_to_theta
 from jax_bnre_hmc.model import RatioEstimatorMLP
-from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
+
 
 numpyro.set_host_device_count(4)
 
@@ -26,7 +28,10 @@ numpyro.set_host_device_count(4)
 def main(cfg: DictConfig):
     dataset_file = cfg.data.get("dataset_file")
     if dataset_file is None:
-        raise ValueError("data.dataset_file must be set for sinusoid HMC (path to HDF5 with 'theta' and 'y_obs')")
+        raise ValueError(
+            "data.dataset_file must be set for sinusoid HMC "
+            "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
+        )
     dataset_file = str(dataset_file)
 
     run_dir = Path(cfg.run_dir).resolve()
@@ -45,22 +50,38 @@ def main(cfg: DictConfig):
     params = load_best_params(best_dir=best_dir)
 
     print(f"\nLoading dataset from {dataset_file}")
-    with h5py.File(dataset_file, "r") as f:
-        theta = f["theta"][:]
-        x = f["y_obs"][:]
-    print(f"theta shape: {theta.shape}")
-    print(f"x shape: {x.shape}")
+    loaded = load_hdf5_dataset(dataset_file, validate=True)
+    splits = loaded.splits
 
+    theta_train_raw = splits.theta_train
+    x_train_raw = splits.x_train
+    theta_test_raw = splits.theta_test
+    x_test_raw = splits.x_test
+
+    # Same scaling as train.py: MinMaxScaler(-1, 1) fit on train only, then transform test
     theta_scaler = MinMaxScaler(feature_range=(-1, 1))
     x_scaler = MinMaxScaler(feature_range=(-1, 1))
-    theta_scaled = theta_scaler.fit_transform(theta)
-    x_scaled = x_scaler.fit_transform(x)
+    theta_scaler.fit(theta_train_raw)
+    x_scaler.fit(x_train_raw)
+
+    theta_test = np.asarray(theta_scaler.transform(theta_test_raw), dtype=np.float32)
+    x_test = np.asarray(x_scaler.transform(x_test_raw), dtype=np.float32)
+
+    print(f"theta_test shape (scaled): {theta_test.shape}")
+    print(f"x_test shape (scaled):     {x_test.shape}")
 
     n_obs = int(cfg.n_observations)
     seed = int(cfg.seed)
-    _, theta_true, _, x_obs = train_test_split(
-        theta_scaled, x_scaled, test_size=n_obs, random_state=seed
-    )
+    if n_obs > theta_test.shape[0]:
+        raise ValueError(
+            f"Requested n_observations={n_obs} but test split only has {theta_test.shape[0]} samples."
+        )
+
+    # Select a deterministic subset of the test split
+    rng = np.random.default_rng(seed)
+    indices = rng.choice(theta_test.shape[0], size=n_obs, replace=False)
+    theta_true = theta_test[indices]
+    x_obs = x_test[indices]
 
     prior = BoxPrior(
         low=jnp.array(cfg.prior.low, dtype=jnp.float32),
@@ -96,10 +117,16 @@ def main(cfg: DictConfig):
     print("All done.")
     print("Posterior samples shape:", posterior_samples.shape)
 
+    # Use parameter labels from metadata if available, otherwise fall back to config/default
+    theta_names = None
+    if loaded.metadata is not None and loaded.metadata.theta_names:
+        theta_names = list(loaded.metadata.theta_names)
+
     n_plots = min(int(cfg.n_plots), n_obs)
     rng = np.random.default_rng(1234)
     selected_indices = rng.choice(n_obs, size=n_plots, replace=False)
-    corner_labels = list(cfg.get("corner_labels", ["A", "f", "phi", "b"]))
+    corner_labels = theta_names or list(cfg.get("corner_labels", ["A", "f", "phi", "b"]))
+
     for idx in selected_indices:
         samples = np.array(posterior_samples[idx].T)
         true_params = np.array(theta_true[idx])

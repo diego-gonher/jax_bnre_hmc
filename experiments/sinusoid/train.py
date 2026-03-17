@@ -9,22 +9,22 @@ absl_logging.set_verbosity(absl_logging.ERROR)
 absl_logging.set_stderrthreshold("error")
 
 import json
-import hydra
-from hydra.core.hydra_config import HydraConfig
 from pathlib import Path
+
+import hydra
 import jax
 import jax.numpy as jnp
-from omegaconf import DictConfig, OmegaConf
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
-import h5py
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig, OmegaConf
+from sklearn.preprocessing import MinMaxScaler
 
+from jax_bnre_hmc.checkpointing import load_best_params
+from jax_bnre_hmc.data import make_joint_and_marginal
+from jax_bnre_hmc.datasets import load_hdf5_dataset
+from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorMLP
 from jax_bnre_hmc.train import TrainConfig, train
-from jax_bnre_hmc.data import make_joint_and_marginal
-from jax_bnre_hmc.checkpointing import load_best_params
-from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 
 
 @hydra.main(config_path="../../configs/sinusoid", config_name="train", version_base="1.3")
@@ -32,39 +32,49 @@ def main(cfg: DictConfig):
     # Set the seed
     key = jax.random.PRNGKey(int(cfg.seed))
 
-    # Load the dataset and preprocess it
+    # Load the dataset (pre-split) and preprocess it
     dataset_file = cfg.data.get("dataset_file")
     if dataset_file is None:
-        raise ValueError("data.dataset_file must be set for sinusoid experiment (path to HDF5 with 'theta' and 'y_obs')")
+        raise ValueError(
+            "data.dataset_file must be set for sinusoid experiment "
+            "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
+        )
     dataset_file = str(dataset_file)
-    print(f'\nLoading dataset from {dataset_file}')
+    print(f"\nLoading dataset from {dataset_file}")
 
-    with h5py.File(dataset_file, 'r') as f:
-        # load the parameters
-        theta = f['theta'][:]
-        print(f'\ntheta shape: {theta.shape}')
-        # load the mocks and the velocity bins
-        x = f['y_obs'][:]
-        print(f'x shape: {x.shape}')
-        f.close()
+    loaded = load_hdf5_dataset(dataset_file, validate=True)
+    splits = loaded.splits
 
-        # use min max scalers on both
-        # create min max scalers, symmetric around 0
-        theta_scaler = MinMaxScaler(feature_range=(-1,1))
-        x_scaler = MinMaxScaler(feature_range=(-1,1))
+    theta_train_raw = splits.theta_train
+    x_train_raw = splits.x_train
+    theta_val_raw = splits.theta_val
+    x_val_raw = splits.x_val
+    theta_test_raw = splits.theta_test
+    x_test_raw = splits.x_test
 
-        # fit and transform the parameters and mocks
-        theta_scaled = theta_scaler.fit_transform(theta)
-        x_scaled = x_scaler.fit_transform(x) 
-        print(f'\nscaled theta shape: {theta_scaled.shape}')
-        print(f'scaled x shape: {x_scaled.shape}')
-        
+    print("\nLoaded dataset splits:")
+    print(f" - theta_train shape: {theta_train_raw.shape}")
+    print(f" - x_train shape:     {x_train_raw.shape}")
+    print(f" - theta_val shape:   {theta_val_raw.shape}")
+    print(f" - x_val shape:       {x_val_raw.shape}")
+    print(f" - theta_test shape:  {theta_test_raw.shape}")
+    print(f" - x_test shape:      {x_test_raw.shape}")
 
-    # Split the dataset into train and validation sets, it must be the scaled versions
-    print("\nSplitting dataset into train and validation sets...")
-    theta_train, theta_val, x_train, x_val = train_test_split(theta_scaled, x_scaled, 
-                                                              test_size=float(cfg.data.validation_fraction), 
-                                                              random_state=int(cfg.seed))
+    # use min max scalers on both (fit on train only), symmetric around 0
+    theta_scaler = MinMaxScaler(feature_range=(-1, 1))
+    x_scaler = MinMaxScaler(feature_range=(-1, 1))
+
+    theta_train = theta_scaler.fit_transform(theta_train_raw)
+    x_train = x_scaler.fit_transform(x_train_raw)
+
+    theta_val = theta_scaler.transform(theta_val_raw)
+    x_val = x_scaler.transform(x_val_raw)
+
+    theta_test = theta_scaler.transform(theta_test_raw)
+    x_test = x_scaler.transform(x_test_raw)
+
+    print(f"\nscaled theta_train shape: {theta_train.shape}")
+    print(f"scaled x_train shape:     {x_train.shape}")
 
     train_cfg = TrainConfig(
         seed=int(cfg.seed),
@@ -113,7 +123,23 @@ def main(cfg: DictConfig):
     # Evaluate mean logit on joint vs marginal for a quick sanity check
     # (higher on joint is a good sign)
     key2 = jax.random.PRNGKey(int(cfg.seed) + 1)
-    joint, marginal = make_joint_and_marginal(key2, theta, x)
+    theta_all = jnp.concatenate(
+        [
+            jnp.asarray(theta_train_raw, dtype=jnp.float32),
+            jnp.asarray(theta_val_raw, dtype=jnp.float32),
+            jnp.asarray(theta_test_raw, dtype=jnp.float32),
+        ],
+        axis=0,
+    )
+    x_all = jnp.concatenate(
+        [
+            jnp.asarray(x_train_raw, dtype=jnp.float32),
+            jnp.asarray(x_val_raw, dtype=jnp.float32),
+            jnp.asarray(x_test_raw, dtype=jnp.float32),
+        ],
+        axis=0,
+    )
+    joint, marginal = make_joint_and_marginal(key2, theta_all, x_all)
     lj = state.apply_fn(state.params, joint.theta, joint.x)
     lm = state.apply_fn(state.params, marginal.theta, marginal.x)
     print("mean(logit) joint   :", float(jnp.mean(lj)))

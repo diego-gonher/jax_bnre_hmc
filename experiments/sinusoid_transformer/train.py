@@ -11,7 +11,6 @@ absl_logging.set_stderrthreshold("error")
 import json
 from pathlib import Path
 
-import h5py
 import hydra
 import jax
 import jax.numpy as jnp
@@ -19,11 +18,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
 from jax_bnre_hmc.checkpointing import load_best_params
 from jax_bnre_hmc.data import make_joint_and_marginal
+from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.loss import nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorTransformer
 from jax_bnre_hmc.train import TrainConfig, train
@@ -34,60 +33,96 @@ def main(cfg: DictConfig):
     # -----------------------------
     # Load dataset
     # -----------------------------
-    dataset_file = str(cfg.data.dataset_file)
+    dataset_file = cfg.data.get("dataset_file")
+    if dataset_file is None:
+        raise ValueError(
+            "data.dataset_file must be set for sinusoid_transformer experiment "
+            "(path to HDF5 with theta_train, x_train, x_train_mask; theta_val, x_val, x_val_mask; "
+            "theta_test, x_test, x_test_mask)"
+        )
+    dataset_file = str(dataset_file)
     print(f"\nLoading dataset from {dataset_file}")
 
-    with h5py.File(dataset_file, "r") as f:
-        # load the needed arrays
-        theta = f["theta"][:]
-        y_obs = f["y_obs"][:]
-        mask = f["mask"][:]
+    loaded = load_hdf5_dataset(dataset_file, validate=True)
+    splits = loaded.splits
 
-    print(f"\ntheta shape: {theta.shape}")
-    print(f"y_obs shape: {y_obs.shape}")
-    print(f"mask shape:  {mask.shape}")
+    theta_train_raw = splits.theta_train
+    x_train_raw = splits.x_train
+    mask_train_raw = splits.mask_train
+    theta_val_raw = splits.theta_val
+    x_val_raw = splits.x_val
+    mask_val_raw = splits.mask_val
+    theta_test_raw = splits.theta_test
+    x_test_raw = splits.x_test
+    mask_test_raw = splits.mask_test
+
+    if mask_train_raw is None or mask_val_raw is None or mask_test_raw is None:
+        raise ValueError(
+            "Sinusoid transformer dataset must provide x_train_mask, x_val_mask, x_test_mask "
+            "in the HDF5 file, with shapes matching x_train, x_val, x_test."
+        )
+
+    print(f"\ntheta_train shape: {theta_train_raw.shape}")
+    print(f"x_train shape:     {x_train_raw.shape}")
+    print(f"mask_train shape:  {mask_train_raw.shape}")
+    print(f"theta_val shape:   {theta_val_raw.shape}")
+    print(f"x_val shape:       {x_val_raw.shape}")
+    print(f"mask_val shape:    {mask_val_raw.shape}")
+    print(f"theta_test shape:  {theta_test_raw.shape}")
+    print(f"x_test shape:      {x_test_raw.shape}")
+    print(f"mask_test shape:   {mask_test_raw.shape}")
 
     # -----------------------------
     # Scale theta and y only
     # -----------------------------
 
-    # replace invalid values with mean across observation axis
-    valid = mask > 0.5
+    # For train split: replace invalid values with mean across observation axis,
+    # then fit scalers on theta_train_raw and filled y_train.
+    mask_train = mask_train_raw.astype(np.float32)
+    valid_train = mask_train > 0.5
+    valid_counts_train = np.sum(valid_train, axis=0)
+    valid_sums_train = np.sum(x_train_raw * valid_train, axis=0)
+    col_means_train = valid_sums_train / np.maximum(valid_counts_train, 1)
+    y_train_filled = np.where(valid_train, x_train_raw, col_means_train[None, :])
 
-    # per-timepoint mean over valid entries only
-    valid_counts = np.sum(valid, axis=0)
-    valid_sums = np.sum(y_obs * valid, axis=0)
-    col_means = valid_sums / np.maximum(valid_counts, 1)
-
-    # fill masked entries only for scaling
-    y_obs_filled = np.where(valid, y_obs, col_means[None, :])
-
-    # scale
     theta_scaler = MinMaxScaler(feature_range=(-1, 1))
     y_scaler = MinMaxScaler(feature_range=(-1, 1))
-    theta_scaled = theta_scaler.fit_transform(theta).astype(np.float32)
-    y_obs_scaled = y_scaler.fit_transform(y_obs_filled).astype(np.float32)
+    theta_train = theta_scaler.fit_transform(theta_train_raw).astype(np.float32)
+    y_train_scaled = y_scaler.fit_transform(y_train_filled).astype(np.float32)
+    y_train_scaled = y_train_scaled * mask_train
+    x_train_tokens = np.stack([y_train_scaled, mask_train], axis=-1).astype(np.float32)
 
-    # zero masked entries for actual model input
-    y_obs_scaled = y_obs_scaled * mask.astype(np.float32)
+    print(f"\nscaled theta_train shape: {theta_train.shape}")
+    print(f"scaled y_train shape:      {y_train_scaled.shape}")
+    print(f"x_train_tokens shape:      {x_train_tokens.shape}")  # (n_train, T, 2)
 
-    # Build tokenized input: [y_i, m_i]
-    x_tokens = np.stack([y_obs_scaled, mask.astype(np.float32)], axis=-1).astype(np.float32)
+    # Apply the same scalers to val and test splits
+    def _transform_split(theta_raw: np.ndarray, x_raw: np.ndarray, mask_raw: np.ndarray):
+        mask_split = mask_raw.astype(np.float32)
+        valid_split = mask_split > 0.5
+        valid_counts_split = np.sum(valid_split, axis=0)
+        valid_sums_split = np.sum(x_raw * valid_split, axis=0)
+        col_means_split = valid_sums_split / np.maximum(valid_counts_split, 1)
+        y_split_filled = np.where(valid_split, x_raw, col_means_split[None, :])
 
-    print(f"\nscaled theta shape: {theta_scaled.shape}")
-    print(f"scaled y_obs shape: {y_obs_scaled.shape}")
-    print(f"x_tokens shape: {x_tokens.shape}")  # (n_sim, n_observation_dims, 2)
+        theta_scaled_split = theta_scaler.transform(theta_raw).astype(np.float32)
+        y_scaled_split = y_scaler.transform(y_split_filled).astype(np.float32)
+        y_scaled_split = y_scaled_split * mask_split
+        x_tokens_split = np.stack([y_scaled_split, mask_split], axis=-1).astype(np.float32)
+        return theta_scaled_split, x_tokens_split
+
+    theta_val, x_val_tokens = _transform_split(theta_val_raw, x_val_raw, mask_val_raw)
+    theta_test, x_test_tokens = _transform_split(theta_test_raw, x_test_raw, mask_test_raw)
 
     # -----------------------------
     # Train / validation split
     # -----------------------------
-    print("\nSplitting dataset into train and validation sets...")
-    theta_train, theta_val, x_train, x_val = train_test_split(
-        theta_scaled,
-        x_tokens,
-        test_size=float(cfg.data.validation_fraction),
-        random_state=int(cfg.seed),
-    )
+    # Note: dataset is already split into train/val/test in the HDF5 file.
+    # We simply use theta_train/theta_val and x_train_tokens/x_val_tokens.
+    theta_train_split = theta_train
+    x_train_split = x_train_tokens
+    theta_val_split = theta_val
+    x_val_split = x_val_tokens
 
     # -----------------------------
     # Train config
@@ -121,10 +156,10 @@ def main(cfg: DictConfig):
     )
 
     train_output = train(
-        theta_train=theta_train,
-        x_train=x_train,
-        theta_val=theta_val,
-        x_val=x_val,
+        theta_train=theta_train_split,
+        x_train=x_train_split,
+        theta_val=theta_val_split,
+        x_val=x_val_split,
         model=model,
         cfg=train_cfg,
     )
@@ -153,8 +188,13 @@ def main(cfg: DictConfig):
     # Use scaled/tokenized data
     # -----------------------------
     key2 = jax.random.PRNGKey(int(cfg.seed) + 1)
-    theta_all = jnp.asarray(theta_scaled, dtype=jnp.float32)
-    x_all = jnp.asarray(x_tokens, dtype=jnp.float32)
+    theta_all = jnp.asarray(
+        np.concatenate([theta_train, theta_val, theta_test], axis=0), dtype=jnp.float32
+    )
+    x_all = jnp.asarray(
+        np.concatenate([x_train_tokens, x_val_tokens, x_test_tokens], axis=0),
+        dtype=jnp.float32,
+    )
 
     joint, marginal = make_joint_and_marginal(key2, theta_all, x_all)
     lj = state.apply_fn(state.params, joint.theta, joint.x)
@@ -222,8 +262,8 @@ def main(cfg: DictConfig):
         expected_best_val_loss = best_meta["val_loss"]
 
         key_val = jax.random.PRNGKey(int(cfg.seed) + 117)
-        theta_val_jnp = jnp.asarray(theta_val, dtype=jnp.float32)
-        x_val_jnp = jnp.asarray(x_val, dtype=jnp.float32)
+        theta_val_jnp = jnp.asarray(theta_val_split, dtype=jnp.float32)
+        x_val_jnp = jnp.asarray(x_val_split, dtype=jnp.float32)
 
         joint_val, marginal_val = make_joint_and_marginal(key_val, theta_val_jnp, x_val_jnp)
         logits_joint_val = state.apply_fn(best_params, joint_val.theta, joint_val.x)
