@@ -30,7 +30,7 @@ def main(cfg: DictConfig):
     dataset_file = cfg.data.get("dataset_file")
     if dataset_file is None:
         raise ValueError(
-            "data.dataset_file must be set for sinusoid HMC "
+            "data.dataset_file must be set for HMC "
             "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
         )
     dataset_file = str(dataset_file)
@@ -76,7 +76,7 @@ def main(cfg: DictConfig):
     x_val = x_scaler.transform(x_val)
     x_test = x_scaler.transform(x_test)
 
-    params_all_scaled = theta_scaler.transform(np.concatenate((theta_train, theta_val, theta_test), axis=0))
+    params_all_scaled = np.concatenate((theta_train, theta_val, theta_test), axis=0)
     hull = ConvexHull(params_all_scaled)
     prior = ConvexHullPrior(
         low=jnp.asarray(hull.min_bound),
