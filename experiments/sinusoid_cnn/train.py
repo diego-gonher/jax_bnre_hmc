@@ -9,6 +9,7 @@ absl_logging.set_verbosity(absl_logging.ERROR)
 absl_logging.set_stderrthreshold("error")
 
 import json
+import time
 from pathlib import Path
 
 import hydra
@@ -154,6 +155,7 @@ def main(cfg: DictConfig):
         head_norm=str(cfg.model.head_norm),
     )
 
+    start_time = time.time()
     train_output = train(
         theta_train=theta_train_split,
         x_train=x_train_split,
@@ -162,7 +164,7 @@ def main(cfg: DictConfig):
         model=model,
         cfg=train_cfg,
     )
-
+    total_train_time = time.time() - start_time
     state, train_losses, train_bce_losses, val_losses, val_bce_losses = train_output
 
     # -----------------------------
@@ -211,6 +213,8 @@ def main(cfg: DictConfig):
     # -----------------------------
     # Save metrics
     # -----------------------------
+    epochs_run = len(train_losses)
+    time_per_epoch = total_train_time / max(epochs_run, 1)
     (run_dir / "metrics.txt").write_text(
         f"final_train_loss: {float(train_losses[-1])}\n"
         f"final_val_loss: {float(val_losses[-1])}\n"
@@ -220,6 +224,8 @@ def main(cfg: DictConfig):
         f"mean_logit_marginal: {float(jnp.mean(lm))}\n"
         f"mean_sigmoid_joint: {float(jnp.mean(pj))}\n"
         f"mean_sigmoid_marginal: {float(jnp.mean(pm))}\n"
+        f"training_time_seconds: {float(total_train_time)}\n"
+        f"training_time_per_epoch_seconds: {float(time_per_epoch)}\n"
     )
 
     # -----------------------------

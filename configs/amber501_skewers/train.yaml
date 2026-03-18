@@ -9,7 +9,7 @@ hydra:
 seed: 0
 
 data:
-  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/tau_skewers_z5.00_no_masks.hdf5
+  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/tau_skewers_z5.00_with_masks_miniset.hdf5
 
 model:
   hidden_dims: [128, 128, 128]

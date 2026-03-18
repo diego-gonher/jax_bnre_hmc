@@ -9,6 +9,7 @@ absl_logging.set_verbosity(absl_logging.ERROR)
 absl_logging.set_stderrthreshold("error")
 
 import json
+import time
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from pathlib import Path
@@ -122,6 +123,7 @@ def main(cfg: DictConfig):
         norm=str(cfg.model.norm),
     )
 
+    start_time = time.time()
     train_output = train(
         theta_train=theta_train,
         x_train=x_train,
@@ -130,7 +132,7 @@ def main(cfg: DictConfig):
         model=model,
         cfg=train_cfg,
     )
-
+    total_train_time = time.time() - start_time
     state, train_losses, train_bce_losses, val_losses, val_bce_losses = train_output
 
     # Output directory
@@ -161,6 +163,8 @@ def main(cfg: DictConfig):
     print("mean(sigmoid) marginal:", float(jnp.mean(pm)))
 
     # Save the metrics in a txt file
+    epochs_run = len(train_losses)
+    time_per_epoch = total_train_time / max(epochs_run, 1)
     (run_dir / "metrics.txt").write_text(
         f"final_train_loss: {float(train_losses[-1])}\n"
         f"final_val_loss: {float(val_losses[-1])}\n"
@@ -170,6 +174,8 @@ def main(cfg: DictConfig):
         f"mean_logit_marginal: {float(jnp.mean(lm))}\n"
         f"mean_sigmoid_joint: {float(jnp.mean(pj))}\n"
         f"mean_sigmoid_marginal: {float(jnp.mean(pm))}\n"
+        f"training_time_seconds: {float(total_train_time)}\n"
+        f"training_time_per_epoch_seconds: {float(time_per_epoch)}\n"
     )
 
     plt.figure(figsize=(10, 5))
