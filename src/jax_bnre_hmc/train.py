@@ -120,11 +120,11 @@ def train_step(
         logits_joint = state.apply_fn(params, joint.theta, joint.x)
         logits_marg = state.apply_fn(params, marginal.theta, marginal.x)
 
-        nre_loss = nre_loss_from_logits(logits_joint, logits_marg)
+        # Use BCE-style NRE loss as the primary objective.
         bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
         penalty, balance = bnre_balance_from_logits(logits_joint, logits_marg)
 
-        total_loss = nre_loss + bnre_gamma * penalty
+        total_loss = bce_loss + bnre_gamma * penalty
 
         return total_loss, (bce_loss, penalty, balance)
 
@@ -168,11 +168,11 @@ def validation_step(
     logits_joint = state.apply_fn(state.params, joint.theta, joint.x)
     logits_marg = state.apply_fn(state.params, marginal.theta, marginal.x)
 
-    nre_loss = nre_loss_from_logits(logits_joint, logits_marg)
+    # Validation uses the same BCE-style objective as training.
     bce_loss = nre_loss_bce_style_from_logits(logits_joint, logits_marg)
     penalty, balance = bnre_balance_from_logits(logits_joint, logits_marg)
 
-    total_loss = nre_loss + bnre_gamma * penalty
+    total_loss = bce_loss + bnre_gamma * penalty
 
     return total_loss, bce_loss, penalty, balance
 

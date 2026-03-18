@@ -24,7 +24,7 @@ from sklearn.preprocessing import MinMaxScaler
 from jax_bnre_hmc.checkpointing import load_best_params
 from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.datasets import load_hdf5_dataset
-from jax_bnre_hmc.loss import nre_loss_from_logits
+from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorTransformer
 from jax_bnre_hmc.train import TrainConfig, train
 
@@ -274,7 +274,9 @@ def main(cfg: DictConfig):
         joint_val, marginal_val = make_joint_and_marginal(key_val, theta_val_jnp, x_val_jnp)
         logits_joint_val = state.apply_fn(best_params, joint_val.theta, joint_val.x)
         logits_marg_val = state.apply_fn(best_params, marginal_val.theta, marginal_val.x)
-        recomputed_val_loss = float(nre_loss_from_logits(logits_joint_val, logits_marg_val))
+        recomputed_val_loss = float(
+            nre_loss_bce_style_from_logits(logits_joint_val, logits_marg_val)
+        )
 
         print(f"\nBest model verification:")
         print(f"  Expected best val_loss (from metadata): {expected_best_val_loss:.6f}")
