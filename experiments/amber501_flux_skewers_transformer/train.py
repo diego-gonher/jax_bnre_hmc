@@ -61,6 +61,11 @@ def main(cfg: DictConfig):
     x_test_raw = splits.x_test
     mask_test_raw = splits.mask_test
 
+    # convert to flux skewers
+    x_train_raw = np.exp(-x_train_raw)
+    x_val_raw = np.exp(-x_val_raw)
+    x_test_raw = np.exp(-x_test_raw)
+
     if mask_train_raw is None or mask_val_raw is None or mask_test_raw is None:
         raise ValueError(
             "Amber501 skewers transformer dataset must provide x_train_mask, x_val_mask, "
@@ -86,7 +91,7 @@ def main(cfg: DictConfig):
     theta_scaler = MinMaxScaler(feature_range=(-1, 1))
     theta_train = theta_scaler.fit_transform(theta_train_raw).astype(np.float32)
 
-    # X: same log1p + StandardScaler pipeline, but fit only on valid (unmasked) train data.
+    # X: StandardScaler pipeline, but fit only on valid (unmasked) train data.
     mask_train = mask_train_raw.astype(np.float32)
     valid_train = mask_train > 0.5
     valid_counts_train = np.sum(valid_train, axis=0)
@@ -94,15 +99,16 @@ def main(cfg: DictConfig):
     col_means_train = valid_sums_train / np.maximum(valid_counts_train, 1)
     x_train_filled = np.where(valid_train, x_train_raw, col_means_train[None, :])
 
-    x_scaler_1 = np.log1p
-    x_scaler_2 = StandardScaler()
+    x_scaler = StandardScaler()
 
-    x_train_stage1 = x_scaler_1(x_train_filled)
-    x_train_stage1 = x_train_stage1.astype(np.float32)
-    x_scaler_2.fit(x_train_stage1)
-    x_train_scaled = x_scaler_2.transform(x_train_stage1).astype(np.float32)
+    x_scaler.fit(x_train_filled)
+    x_train_scaled = x_scaler.transform(x_train_filled).astype(np.float32)
+    # results = plt.hist(x_train_scaled.ravel())
+    # print(results)
+    # plt.show()
     x_train_scaled = x_train_scaled * mask_train
     x_train_tokens = np.stack([x_train_scaled, mask_train], axis=-1).astype(np.float32)
+
 
     print(f"\nscaled theta_train shape: {theta_train.shape}")
     print(f"scaled x_train shape:     {x_train_scaled.shape}")
@@ -118,8 +124,7 @@ def main(cfg: DictConfig):
         x_split_filled = np.where(valid_split, x_raw, col_means_split[None, :])
 
         theta_scaled_split = theta_scaler.transform(theta_raw).astype(np.float32)
-        x_stage1_split = x_scaler_1(x_split_filled).astype(np.float32)
-        x_scaled_split = x_scaler_2.transform(x_stage1_split).astype(np.float32)
+        x_scaled_split = x_scaler.transform(x_split_filled).astype(np.float32)
         x_scaled_split = x_scaled_split * mask_split
         x_tokens_split = np.stack([x_scaled_split, mask_split], axis=-1).astype(np.float32)
         return theta_scaled_split, x_tokens_split
