@@ -113,6 +113,45 @@ Inside you’ll find:
 
 ---
 
+## HDF5 training dataset contract
+
+File-based experiments load pre-split data with `jax_bnre_hmc.datasets.load_hdf5_dataset` (and optional validation via `validate_hdf5_dataset`). The expected **HDF5 layout** is:
+
+**Required datasets (2D numeric arrays, finite values):**
+
+| Dataset       | Meaning |
+|---------------|---------|
+| `theta_train` | Parameters for training rows |
+| `x_train`     | Observations for training rows |
+| `theta_val`   | Parameters for validation rows |
+| `x_val`       | Observations for validation rows |
+| `theta_test`  | Parameters for test rows |
+| `x_test`      | Observations for test rows |
+
+**Shape rules:**
+
+- Each split: `theta_*` and `x_*` must have the **same number of rows** (paired \((\theta, x)\) examples).
+- Across splits: all `theta_*` must share the same **second dimension** (parameter dim); all `x_*` must share the same **second dimension** (feature dim).
+
+**Optional masks (for \(x\) only, e.g. missing grid points):**
+
+| Dataset       | Meaning |
+|---------------|---------|
+| `x_train_mask` | Mask for `x_train` |
+| `x_val_mask`   | Mask for `x_val` |
+| `x_test_mask`  | Mask for `x_test` |
+
+If **any** mask dataset is present, **all three** must be present. Each mask must be **2D**, numeric, finite, and **exactly the same shape** as the corresponding `x_*` array. Typical convention: `1` = valid / observed, `0` = missing (downstream scripts may treat values \(> 0.5\) as valid).
+
+**Optional metadata (file-level HDF5 attributes):**
+
+- `theta_names`, `x_names` (if present, used for plotting labels where supported)
+- `description` and any other attributes are collected into `LoadedDataset.metadata`
+
+No scaling, shuffling, or reshaping is applied in the loader (see `load_hdf5_dataset` docstring); fit scaling on train only and apply downstream, together with any experiment-specific preprocessing in `train.py` / `hmc.py`.
+
+---
+
 ## Installation
 
 From the repository root:
