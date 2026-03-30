@@ -51,6 +51,7 @@ def main(cfg: DictConfig):
     run_dir = Path(cfg.run_dir).resolve()
     output_dir = Path(cfg.output_dir).resolve() if cfg.output_dir else run_dir / "hmc_results"
     output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "hmc.yaml").write_text(OmegaConf.to_yaml(cfg, resolve=True))
 
     run_cfg = OmegaConf.load(resolve_run_train_config_path(run_dir))
     ckpt_dirname = run_cfg.train.get("checkpoint_dirname", "checkpoints")
