@@ -50,6 +50,7 @@ The code is written to be:
 - **`checkpointing.py`**  
   - Uses **`orbax.checkpoint.PyTreeCheckpointer`**.  
   - `get_run_dir`: Hydra run directory helper.  
+  - `resolve_run_train_config_path`: Resolves `run_dir/train.yaml`, or legacy `run_dir/config.yaml`.  
   - `ensure_dirs`: Creates `checkpoints/latest/` and `checkpoints/best/`.  
   - `save_latest`: Saves the full `TrainState` (latest).  
   - `save_best`: Saves only the best model parameters (params PyTree).  
@@ -103,7 +104,7 @@ outputs/<exp_name>/<YYYY-MM-DD>_<HH-MM-SS>/
 
 Inside you’ll find:
 
-- **`config.yaml`** – full resolved Hydra config for the run.  
+- **`train.yaml`** – full resolved Hydra training config for the run (older runs may use `config.yaml`; HMC loads `train.yaml` when present).  
 - **`metrics.txt`** – final losses and summary statistics.  
 - **`losses.png`, `bce_style_losses.png`, `sigmoid.png`** – training curves and diagnostic plots.  
 - **`checkpoints/`** –  
@@ -248,14 +249,14 @@ python experiments/linear_toy/train.py train.bnre_lambda=0.0 train.stop_after_ep
 
 Inference is driven by **Hydra configs** in `configs/*/hmc.yaml`. Each `experiments/*/hmc.py` script loads its corresponding `hmc.yaml`, then:
 
-- Reads `run_dir/config.yaml` (the saved training config) to **rebuild the exact ratio-estimator architecture**.
+- Reads `run_dir/train.yaml` (the saved training config; falls back to `config.yaml` for legacy runs) to **rebuild the exact ratio-estimator architecture**.
 - Loads best parameters from `run_dir/<checkpoint_dirname>/best/` via Orbax.
 - Uses HMC/NUTS (NumPyro) to sample \(\theta\) conditioned on selected observations.
 
 ### Quickstart: running inference with `hmc.yaml`
 
 1. Pick a completed training run directory (e.g. `outputs/sinusoid/2026-03-15_17-48-50`). It must contain:
-   - `config.yaml`
+   - `train.yaml` (or legacy `config.yaml`)
    - `checkpoints/best/` (and/or `checkpoints/latest/`)
 
 2. Edit (or override) the experiment’s `configs/<exp>/hmc.yaml`. For example, `configs/sinusoid/hmc.yaml` contains:
@@ -297,7 +298,7 @@ By default, if `output_dir: null`, results are written to `run_dir/hmc_results/`
 
 ### What `hmc.yaml` controls
 
-- **`run_dir`**: Which trained estimator to load (architecture from `run_dir/config.yaml`, params from `run_dir/<checkpoint_dirname>/best/`).  
+- **`run_dir`**: Which trained estimator to load (architecture from `run_dir/train.yaml`, or `run_dir/config.yaml` on older runs; params from `run_dir/<checkpoint_dirname>/best/`).  
 - **`data.dataset_file`**: Where to load inference observations (HDF5) for file-based experiments.  
 - **`num_chains`, `num_warmup`, `num_samples`**: NUTS/HMC settings.  
 - **`n_observations`, `seed`**: How many observations to run and how they are selected.  

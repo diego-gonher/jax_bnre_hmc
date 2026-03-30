@@ -17,7 +17,7 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import train_test_split
 from scipy.spatial import ConvexHull
 
-from jax_bnre_hmc.checkpointing import load_best_params
+from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_config_path
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.hmc import (
     ConvexHullPrior,
@@ -52,7 +52,7 @@ def main(cfg: DictConfig):
     output_dir = Path(cfg.output_dir).resolve() if cfg.output_dir else run_dir / "hmc_results"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    run_cfg = OmegaConf.load(run_dir / "config.yaml")
+    run_cfg = OmegaConf.load(resolve_run_train_config_path(run_dir))
     ckpt_dirname = run_cfg.train.get("checkpoint_dirname", "checkpoints")
     best_dir = run_dir / ckpt_dirname / "best"
 

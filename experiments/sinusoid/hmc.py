@@ -15,7 +15,7 @@ import corner
 
 from sklearn.preprocessing import MinMaxScaler
 
-from jax_bnre_hmc.checkpointing import load_best_params
+from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_config_path
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 from jax_bnre_hmc.hmc import BoxPrior, make_log_ratio_fn, make_potential_fn, run_nuts, z_to_theta
@@ -39,7 +39,7 @@ def main(cfg: DictConfig):
     output_dir = Path(cfg.output_dir).resolve() if cfg.output_dir else run_dir / "hmc_results"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    run_cfg = OmegaConf.load(run_dir / "config.yaml")
+    run_cfg = OmegaConf.load(resolve_run_train_config_path(run_dir))
     ckpt_dirname = run_cfg.train.get("checkpoint_dirname", "checkpoints")
     best_dir = run_dir / ckpt_dirname / "best"
 

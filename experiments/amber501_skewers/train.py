@@ -140,7 +140,7 @@ def main(cfg: DictConfig):
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # Save config in output directory
-    (run_dir / "config.yaml").write_text(OmegaConf.to_yaml(cfg))
+    (run_dir / "train.yaml").write_text(OmegaConf.to_yaml(cfg))
 
     # Basic sanity prints
     print("done. final train loss:", float(train_losses[-1]))

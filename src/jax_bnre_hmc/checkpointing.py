@@ -18,6 +18,19 @@ def get_run_dir() -> Path:
     return Path(HydraConfig.get().run.dir).resolve()
 
 
+def resolve_run_train_config_path(run_dir: Path | str) -> Path:
+    """Path to the saved training Hydra config inside a run directory.
+
+    Prefers ``train.yaml`` (current convention). Falls back to ``config.yaml``
+    for runs produced before the rename.
+    """
+    run_dir = Path(run_dir).resolve()
+    train_yaml = run_dir / "train.yaml"
+    if train_yaml.exists():
+        return train_yaml
+    return run_dir / "config.yaml"
+
+
 def ensure_dirs(base_dir: Path, checkpoint_dirname: str) -> tuple[Path, Path]:
     """Create checkpoint directories if they don't exist.
     

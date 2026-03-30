@@ -1,4 +1,4 @@
-# Path to the training run directory (contains config.yaml and checkpoints/)
+# Path to the training run directory (contains train.yaml and checkpoints/)
 run_dir: outputs/amber501_p1d/2026-03-16_10-19-30
 
 output_dir: null
