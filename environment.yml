@@ -81,4 +81,9 @@ dependencies:
       - treescope==0.1.10
       - typing-extensions==4.15.0
       - zipp==3.23.0
+      - h5py==3.16.0
+      - matplotlib==3.10.8
+      - scikit-learn==1.8.0
+      - numpyro==0.20.1
+      - corner==2.2.3
 prefix: /opt/anaconda3/envs/jax_bnre

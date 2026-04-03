@@ -9,7 +9,7 @@ hydra:
 seed: 0
 
 data:
-  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_no_masks.h5  # path to HDF5 with theta, y_obs; null = must set via CLI or override
+  dataset_file: datasets/sinusoid/sinusoid_noisy_no_masks.h5  # path to HDF5 with theta, y_obs; null = must set via CLI or override
 
 model:
   hidden_dims: [50, 50, 50]
