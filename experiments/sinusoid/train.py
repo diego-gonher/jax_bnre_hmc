@@ -25,7 +25,7 @@ from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorMLP
-from jax_bnre_hmc.train import TrainConfig, train
+from jax_bnre_hmc.train import TrainConfig, train, write_train_summary
 
 
 @hydra.main(config_path="../../configs/sinusoid", config_name="train", version_base="1.3")
@@ -33,79 +33,88 @@ def main(cfg: DictConfig):
     # Set the seed
     key = jax.random.PRNGKey(int(cfg.seed))
 
-    # Load the dataset (pre-split) and preprocess it
-    dataset_file = cfg.data.get("dataset_file")
-    if dataset_file is None:
-        raise ValueError(
-            "data.dataset_file must be set for sinusoid experiment "
-            "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
+    try:
+        # Load the dataset (pre-split) and preprocess it
+        dataset_file = cfg.data.get("dataset_file")
+        if dataset_file is None:
+            raise ValueError(
+                "data.dataset_file must be set for sinusoid experiment "
+                "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
+            )
+        dataset_file = str(dataset_file)
+        print(f"\nLoading dataset from {dataset_file}")
+
+        loaded = load_hdf5_dataset(dataset_file, validate=True)
+        splits = loaded.splits
+
+        theta_train_raw = splits.theta_train
+        x_train_raw = splits.x_train
+        theta_val_raw = splits.theta_val
+        x_val_raw = splits.x_val
+        theta_test_raw = splits.theta_test
+        x_test_raw = splits.x_test
+
+        print("\nLoaded dataset splits:")
+        print(f" - theta_train shape: {theta_train_raw.shape}")
+        print(f" - x_train shape:     {x_train_raw.shape}")
+        print(f" - theta_val shape:   {theta_val_raw.shape}")
+        print(f" - x_val shape:       {x_val_raw.shape}")
+        print(f" - theta_test shape:  {theta_test_raw.shape}")
+        print(f" - x_test shape:      {x_test_raw.shape}")
+
+        # use min max scalers on both (fit on train only), symmetric around 0
+        theta_scaler = MinMaxScaler(feature_range=(-1, 1))
+        x_scaler = MinMaxScaler(feature_range=(-1, 1))
+
+        theta_train = theta_scaler.fit_transform(theta_train_raw)
+        x_train = x_scaler.fit_transform(x_train_raw)
+
+        theta_val = theta_scaler.transform(theta_val_raw)
+        x_val = x_scaler.transform(x_val_raw)
+
+        theta_test = theta_scaler.transform(theta_test_raw)
+        x_test = x_scaler.transform(x_test_raw)
+
+        print(f"\nscaled theta_train shape: {theta_train.shape}")
+        print(f"scaled x_train shape:     {x_train.shape}")
+
+        train_cfg = TrainConfig(
+            seed=int(cfg.seed),
+            lr=float(cfg.train.lr),
+            epochs=int(cfg.train.epochs),
+            bnre_gamma=float(cfg.train.bnre_gamma),
+            print_every=int(cfg.train.print_every),
+            batch_size=int(cfg.train.batch_size),
+            clip_max_norm=cfg.train.clip_max_norm,
+            save_every=int(cfg.train.save_every),
+            checkpoint_dirname=cfg.train.checkpoint_dirname,
+            stop_after_epochs=cfg.train.stop_after_epochs,
+            model_type="mlp",
         )
-    dataset_file = str(dataset_file)
-    print(f"\nLoading dataset from {dataset_file}")
+        print('\nTraining configuration created\nStarting training loop:')
 
-    loaded = load_hdf5_dataset(dataset_file, validate=True)
-    splits = loaded.splits
+        model = RatioEstimatorMLP(
+            hidden_dims=tuple(cfg.model.hidden_dims),
+            activation=str(cfg.model.activation),
+            norm=str(cfg.model.norm),
+        )
 
-    theta_train_raw = splits.theta_train
-    x_train_raw = splits.x_train
-    theta_val_raw = splits.theta_val
-    x_val_raw = splits.x_val
-    theta_test_raw = splits.theta_test
-    x_test_raw = splits.x_test
+        start_time = time.time()
+        train_output = train(
+            theta_train=theta_train,
+            x_train=x_train,
+            theta_val=theta_val,
+            x_val=x_val,
+            model=model,
+            cfg=train_cfg,
+        )
+    except Exception as e:
+        run_dir = Path(HydraConfig.get().run.dir).resolve()
+        run_dir.mkdir(parents=True, exist_ok=True)
+        msg = str(e) if str(e) else type(e).__name__
+        write_train_summary(run_dir, status="error", message=msg)
+        raise
 
-    print("\nLoaded dataset splits:")
-    print(f" - theta_train shape: {theta_train_raw.shape}")
-    print(f" - x_train shape:     {x_train_raw.shape}")
-    print(f" - theta_val shape:   {theta_val_raw.shape}")
-    print(f" - x_val shape:       {x_val_raw.shape}")
-    print(f" - theta_test shape:  {theta_test_raw.shape}")
-    print(f" - x_test shape:      {x_test_raw.shape}")
-
-    # use min max scalers on both (fit on train only), symmetric around 0
-    theta_scaler = MinMaxScaler(feature_range=(-1, 1))
-    x_scaler = MinMaxScaler(feature_range=(-1, 1))
-
-    theta_train = theta_scaler.fit_transform(theta_train_raw)
-    x_train = x_scaler.fit_transform(x_train_raw)
-
-    theta_val = theta_scaler.transform(theta_val_raw)
-    x_val = x_scaler.transform(x_val_raw)
-
-    theta_test = theta_scaler.transform(theta_test_raw)
-    x_test = x_scaler.transform(x_test_raw)
-
-    print(f"\nscaled theta_train shape: {theta_train.shape}")
-    print(f"scaled x_train shape:     {x_train.shape}")
-
-    train_cfg = TrainConfig(
-        seed=int(cfg.seed),
-        lr=float(cfg.train.lr),
-        epochs=int(cfg.train.epochs),
-        bnre_gamma=float(cfg.train.bnre_gamma),
-        print_every=int(cfg.train.print_every),
-        batch_size=int(cfg.train.batch_size),
-        clip_max_norm=cfg.train.clip_max_norm,
-        save_every=int(cfg.train.save_every),
-        checkpoint_dirname=cfg.train.checkpoint_dirname,
-        stop_after_epochs=cfg.train.stop_after_epochs,
-    )
-    print('\nTraining configuration created\nStarting training loop:')
-
-    model = RatioEstimatorMLP(
-        hidden_dims=tuple(cfg.model.hidden_dims),
-        activation=str(cfg.model.activation),
-        norm=str(cfg.model.norm),
-    )
-
-    start_time = time.time()
-    train_output = train(
-        theta_train=theta_train,
-        x_train=x_train,
-        theta_val=theta_val,
-        x_val=x_val,
-        model=model,
-        cfg=train_cfg,
-    )
     total_train_time = time.time() - start_time
     state, train_losses, train_bce_losses, val_losses, val_bce_losses = train_output
 

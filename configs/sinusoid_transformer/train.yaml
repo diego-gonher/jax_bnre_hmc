@@ -9,7 +9,7 @@ hydra:
 seed: 0
 
 data:
-  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_with_masks.h5
+  dataset_file: datasets/sinusoid/sinusoid_noisy_with_masks.h5
 
 model:
   d_model: 16

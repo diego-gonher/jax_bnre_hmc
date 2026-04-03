@@ -26,7 +26,7 @@ from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorTransformer
-from jax_bnre_hmc.train import TrainConfig, train
+from jax_bnre_hmc.train import TrainConfig, train, write_train_summary
 
 
 @hydra.main(config_path="../../configs/sinusoid_transformer", config_name="train", version_base="1.3")
@@ -34,137 +34,146 @@ def main(cfg: DictConfig):
     # -----------------------------
     # Load dataset
     # -----------------------------
-    dataset_file = cfg.data.get("dataset_file")
-    if dataset_file is None:
-        raise ValueError(
-            "data.dataset_file must be set for sinusoid_transformer experiment "
-            "(path to HDF5 with theta_train, x_train, x_train_mask; theta_val, x_val, x_val_mask; "
-            "theta_test, x_test, x_test_mask)"
+    try:
+        dataset_file = cfg.data.get("dataset_file")
+        if dataset_file is None:
+            raise ValueError(
+                "data.dataset_file must be set for sinusoid_transformer experiment "
+                "(path to HDF5 with theta_train, x_train, x_train_mask; theta_val, x_val, x_val_mask; "
+                "theta_test, x_test, x_test_mask)"
+            )
+        dataset_file = str(dataset_file)
+        print(f"\nLoading dataset from {dataset_file}")
+
+        loaded = load_hdf5_dataset(dataset_file, validate=True)
+        splits = loaded.splits
+
+        theta_train_raw = splits.theta_train
+        x_train_raw = splits.x_train
+        mask_train_raw = splits.mask_train
+        theta_val_raw = splits.theta_val
+        x_val_raw = splits.x_val
+        mask_val_raw = splits.mask_val
+        theta_test_raw = splits.theta_test
+        x_test_raw = splits.x_test
+        mask_test_raw = splits.mask_test
+
+        if mask_train_raw is None or mask_val_raw is None or mask_test_raw is None:
+            raise ValueError(
+                "Sinusoid transformer dataset must provide x_train_mask, x_val_mask, x_test_mask "
+                "in the HDF5 file, with shapes matching x_train, x_val, x_test."
+            )
+
+        print(f"\ntheta_train shape: {theta_train_raw.shape}")
+        print(f"x_train shape:     {x_train_raw.shape}")
+        print(f"mask_train shape:  {mask_train_raw.shape}")
+        print(f"theta_val shape:   {theta_val_raw.shape}")
+        print(f"x_val shape:       {x_val_raw.shape}")
+        print(f"mask_val shape:    {mask_val_raw.shape}")
+        print(f"theta_test shape:  {theta_test_raw.shape}")
+        print(f"x_test shape:      {x_test_raw.shape}")
+        print(f"mask_test shape:   {mask_test_raw.shape}")
+
+        # -----------------------------
+        # Scale theta and y only
+        # -----------------------------
+
+        # For train split: replace invalid values with mean across observation axis,
+        # then fit scalers on theta_train_raw and filled y_train.
+        mask_train = mask_train_raw.astype(np.float32)
+        valid_train = mask_train > 0.5
+        valid_counts_train = np.sum(valid_train, axis=0)
+        valid_sums_train = np.sum(x_train_raw * valid_train, axis=0)
+        col_means_train = valid_sums_train / np.maximum(valid_counts_train, 1)
+        y_train_filled = np.where(valid_train, x_train_raw, col_means_train[None, :])
+
+        theta_scaler = MinMaxScaler(feature_range=(-1, 1))
+        y_scaler = MinMaxScaler(feature_range=(-1, 1))
+        theta_train = theta_scaler.fit_transform(theta_train_raw).astype(np.float32)
+        y_train_scaled = y_scaler.fit_transform(y_train_filled).astype(np.float32)
+        y_train_scaled = y_train_scaled * mask_train
+        x_train_tokens = np.stack([y_train_scaled, mask_train], axis=-1).astype(np.float32)
+
+        print(f"\nscaled theta_train shape: {theta_train.shape}")
+        print(f"scaled y_train shape:      {y_train_scaled.shape}")
+        print(f"x_train_tokens shape:      {x_train_tokens.shape}")  # (n_train, T, 2)
+
+        # Apply the same scalers to val and test splits
+        def _transform_split(theta_raw: np.ndarray, x_raw: np.ndarray, mask_raw: np.ndarray):
+            mask_split = mask_raw.astype(np.float32)
+            valid_split = mask_split > 0.5
+            valid_counts_split = np.sum(valid_split, axis=0)
+            valid_sums_split = np.sum(x_raw * valid_split, axis=0)
+            col_means_split = valid_sums_split / np.maximum(valid_counts_split, 1)
+            y_split_filled = np.where(valid_split, x_raw, col_means_split[None, :])
+
+            theta_scaled_split = theta_scaler.transform(theta_raw).astype(np.float32)
+            y_scaled_split = y_scaler.transform(y_split_filled).astype(np.float32)
+            y_scaled_split = y_scaled_split * mask_split
+            x_tokens_split = np.stack([y_scaled_split, mask_split], axis=-1).astype(np.float32)
+            return theta_scaled_split, x_tokens_split
+
+        theta_val, x_val_tokens = _transform_split(theta_val_raw, x_val_raw, mask_val_raw)
+        theta_test, x_test_tokens = _transform_split(theta_test_raw, x_test_raw, mask_test_raw)
+
+        # -----------------------------
+        # Train / validation split
+        # -----------------------------
+        # Note: dataset is already split into train/val/test in the HDF5 file.
+        # We simply use theta_train/theta_val and x_train_tokens/x_val_tokens.
+        theta_train_split = theta_train
+        x_train_split = x_train_tokens
+        theta_val_split = theta_val
+        x_val_split = x_val_tokens
+
+        # -----------------------------
+        # Train config
+        # -----------------------------
+        train_cfg = TrainConfig(
+            seed=int(cfg.seed),
+            lr=float(cfg.train.lr),
+            epochs=int(cfg.train.epochs),
+            bnre_gamma=float(cfg.train.bnre_gamma),
+            print_every=int(cfg.train.print_every),
+            batch_size=int(cfg.train.batch_size),
+            clip_max_norm=cfg.train.clip_max_norm,
+            save_every=int(cfg.train.save_every),
+            checkpoint_dirname=cfg.train.checkpoint_dirname,
+            stop_after_epochs=cfg.train.stop_after_epochs,
+            model_type="transformer",
         )
-    dataset_file = str(dataset_file)
-    print(f"\nLoading dataset from {dataset_file}")
+        print("\nTraining configuration created\nStarting training loop:")
 
-    loaded = load_hdf5_dataset(dataset_file, validate=True)
-    splits = loaded.splits
-
-    theta_train_raw = splits.theta_train
-    x_train_raw = splits.x_train
-    mask_train_raw = splits.mask_train
-    theta_val_raw = splits.theta_val
-    x_val_raw = splits.x_val
-    mask_val_raw = splits.mask_val
-    theta_test_raw = splits.theta_test
-    x_test_raw = splits.x_test
-    mask_test_raw = splits.mask_test
-
-    if mask_train_raw is None or mask_val_raw is None or mask_test_raw is None:
-        raise ValueError(
-            "Sinusoid transformer dataset must provide x_train_mask, x_val_mask, x_test_mask "
-            "in the HDF5 file, with shapes matching x_train, x_val, x_test."
+        # -----------------------------
+        # Model
+        # -----------------------------
+        model = RatioEstimatorTransformer(
+            d_model=int(cfg.model.d_model),
+            num_layers=int(cfg.model.num_layers),
+            num_heads=int(cfg.model.num_heads),
+            transformer_mlp_dim=int(cfg.model.transformer_mlp_dim),
+            transformer_activation=str(cfg.model.transformer_activation),
+            head_hidden_dims=tuple(cfg.model.head_hidden_dims),
+            head_activation=str(cfg.model.head_activation),
+            head_norm=str(cfg.model.head_norm),
         )
 
-    print(f"\ntheta_train shape: {theta_train_raw.shape}")
-    print(f"x_train shape:     {x_train_raw.shape}")
-    print(f"mask_train shape:  {mask_train_raw.shape}")
-    print(f"theta_val shape:   {theta_val_raw.shape}")
-    print(f"x_val shape:       {x_val_raw.shape}")
-    print(f"mask_val shape:    {mask_val_raw.shape}")
-    print(f"theta_test shape:  {theta_test_raw.shape}")
-    print(f"x_test shape:      {x_test_raw.shape}")
-    print(f"mask_test shape:   {mask_test_raw.shape}")
+        start_time = time.time()
+        train_output = train(
+            theta_train=theta_train_split,
+            x_train=x_train_split,
+            theta_val=theta_val_split,
+            x_val=x_val_split,
+            model=model,
+            cfg=train_cfg,
+        )
+    except Exception as e:
+        run_dir = Path(HydraConfig.get().run.dir).resolve()
+        run_dir.mkdir(parents=True, exist_ok=True)
+        msg = str(e) if str(e) else type(e).__name__
+        write_train_summary(run_dir, status="error", message=msg)
+        raise
 
-    # -----------------------------
-    # Scale theta and y only
-    # -----------------------------
-
-    # For train split: replace invalid values with mean across observation axis,
-    # then fit scalers on theta_train_raw and filled y_train.
-    mask_train = mask_train_raw.astype(np.float32)
-    valid_train = mask_train > 0.5
-    valid_counts_train = np.sum(valid_train, axis=0)
-    valid_sums_train = np.sum(x_train_raw * valid_train, axis=0)
-    col_means_train = valid_sums_train / np.maximum(valid_counts_train, 1)
-    y_train_filled = np.where(valid_train, x_train_raw, col_means_train[None, :])
-
-    theta_scaler = MinMaxScaler(feature_range=(-1, 1))
-    y_scaler = MinMaxScaler(feature_range=(-1, 1))
-    theta_train = theta_scaler.fit_transform(theta_train_raw).astype(np.float32)
-    y_train_scaled = y_scaler.fit_transform(y_train_filled).astype(np.float32)
-    y_train_scaled = y_train_scaled * mask_train
-    x_train_tokens = np.stack([y_train_scaled, mask_train], axis=-1).astype(np.float32)
-
-    print(f"\nscaled theta_train shape: {theta_train.shape}")
-    print(f"scaled y_train shape:      {y_train_scaled.shape}")
-    print(f"x_train_tokens shape:      {x_train_tokens.shape}")  # (n_train, T, 2)
-
-    # Apply the same scalers to val and test splits
-    def _transform_split(theta_raw: np.ndarray, x_raw: np.ndarray, mask_raw: np.ndarray):
-        mask_split = mask_raw.astype(np.float32)
-        valid_split = mask_split > 0.5
-        valid_counts_split = np.sum(valid_split, axis=0)
-        valid_sums_split = np.sum(x_raw * valid_split, axis=0)
-        col_means_split = valid_sums_split / np.maximum(valid_counts_split, 1)
-        y_split_filled = np.where(valid_split, x_raw, col_means_split[None, :])
-
-        theta_scaled_split = theta_scaler.transform(theta_raw).astype(np.float32)
-        y_scaled_split = y_scaler.transform(y_split_filled).astype(np.float32)
-        y_scaled_split = y_scaled_split * mask_split
-        x_tokens_split = np.stack([y_scaled_split, mask_split], axis=-1).astype(np.float32)
-        return theta_scaled_split, x_tokens_split
-
-    theta_val, x_val_tokens = _transform_split(theta_val_raw, x_val_raw, mask_val_raw)
-    theta_test, x_test_tokens = _transform_split(theta_test_raw, x_test_raw, mask_test_raw)
-
-    # -----------------------------
-    # Train / validation split
-    # -----------------------------
-    # Note: dataset is already split into train/val/test in the HDF5 file.
-    # We simply use theta_train/theta_val and x_train_tokens/x_val_tokens.
-    theta_train_split = theta_train
-    x_train_split = x_train_tokens
-    theta_val_split = theta_val
-    x_val_split = x_val_tokens
-
-    # -----------------------------
-    # Train config
-    # -----------------------------
-    train_cfg = TrainConfig(
-        seed=int(cfg.seed),
-        lr=float(cfg.train.lr),
-        epochs=int(cfg.train.epochs),
-        bnre_gamma=float(cfg.train.bnre_gamma),
-        print_every=int(cfg.train.print_every),
-        batch_size=int(cfg.train.batch_size),
-        clip_max_norm=cfg.train.clip_max_norm,
-        save_every=int(cfg.train.save_every),
-        checkpoint_dirname=cfg.train.checkpoint_dirname,
-        stop_after_epochs=cfg.train.stop_after_epochs,
-    )
-    print("\nTraining configuration created\nStarting training loop:")
-
-    # -----------------------------
-    # Model
-    # -----------------------------
-    model = RatioEstimatorTransformer(
-        d_model=int(cfg.model.d_model),
-        num_layers=int(cfg.model.num_layers),
-        num_heads=int(cfg.model.num_heads),
-        transformer_mlp_dim=int(cfg.model.transformer_mlp_dim),
-        transformer_activation=str(cfg.model.transformer_activation),
-        head_hidden_dims=tuple(cfg.model.head_hidden_dims),
-        head_activation=str(cfg.model.head_activation),
-        head_norm=str(cfg.model.head_norm),
-    )
-
-    start_time = time.time()
-    train_output = train(
-        theta_train=theta_train_split,
-        x_train=x_train_split,
-        theta_val=theta_val_split,
-        x_val=x_val_split,
-        model=model,
-        cfg=train_cfg,
-    )
     total_train_time = time.time() - start_time
     state, train_losses, train_bce_losses, val_losses, val_bce_losses = train_output
 

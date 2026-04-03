@@ -1,5 +1,5 @@
 # Path to the training run directory (contains train.yaml and checkpoints/)
-run_dir: outputs/sinusoid_transformer/2026-03-16_21-09-33
+run_dir: outputs/sinusoid_transformer/2026-04-03_14-10-48
 
 # Where to write HMC outputs (null => run_dir/hmc_results). Hydra run dir is set to the same
 # so that job logs (e.g. hmc.log) end up next to corner plots, TARP, and posterior HDF5.
@@ -10,7 +10,7 @@ hydra:
     dir: ${run_dir}/hmc_results
 
 data:
-  dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/sinusoid/sinusoid_noisy_with_masks.h5  # set via CLI or override; HDF5 with theta, y_obs, mask
+  dataset_file: datasets/sinusoid/sinusoid_noisy_with_masks.h5  # set via CLI or override; HDF5 with theta, y_obs, mask
 
 num_chains: 4
 num_warmup: 4000

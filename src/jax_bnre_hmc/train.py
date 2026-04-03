@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import math
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -28,6 +32,7 @@ class TrainConfig:
         checkpoint_dirname: Directory name for storing checkpoints.
         bnre_gamma: Weight for the BNRE balance penalty. Set to 0.0 for standard NRE training.
         stop_after_epochs: Early stopping patience. Stop training if no improvement for N epochs. If None, no early stopping.
+        model_type: Coarse architecture label for train_summary.json (e.g. mlp, transformer, resnet).
     """
     seed: int = 0
     lr: float = 1e-3
@@ -39,6 +44,52 @@ class TrainConfig:
     checkpoint_dirname: str = "checkpoints"
     bnre_gamma: float = 100.0
     stop_after_epochs: int | None = None
+    model_type: str = "mlp"
+
+
+def write_train_summary(
+    run_dir: Path | str,
+    *,
+    status: Literal["ok", "error"],
+    model_type: str = "mlp",
+    theta_dim: int | None = None,
+    x_dim: int | None = None,
+    best_val_loss: float | None = None,
+    best_epoch: int | None = None,
+    message: str | None = None,
+) -> None:
+    """Write ``train_summary.json`` under the Hydra run directory (overwrites if present).
+
+    For ``status="ok"``, ``best_val_loss`` and ``best_epoch`` must match the best checkpoint
+    (same values as ``checkpoints/.../best_meta.json``). Callers should pass the values used
+    when saving the best checkpoint.
+
+    ``dims.x_dim`` convention: for vector observations ``x_train`` with shape ``(N, D)``,
+    ``x_dim = D``. For tokenized inputs ``(N, T, F)`` (e.g. transformer with ``F`` channels),
+    ``x_dim`` is the semantic sequence length ``T`` (``x_train.shape[1]``), not ``T*F`` and
+    not the feature dimension ``F``.
+
+    For ``status="error"``, include ``message`` when available.
+    """
+    run_dir = Path(run_dir).resolve()
+    out = run_dir / "train_summary.json"
+    if status == "error":
+        payload: dict = {"status": "error"}
+        if message is not None:
+            payload["message"] = message
+    else:
+        if best_val_loss is None or best_epoch is None:
+            raise ValueError("write_train_summary(status='ok') requires best_val_loss and best_epoch")
+        if theta_dim is None or x_dim is None:
+            raise ValueError("write_train_summary(status='ok') requires theta_dim and x_dim")
+        payload = {
+            "status": "ok",
+            "best_val_loss": float(best_val_loss),
+            "best_epoch": int(best_epoch),
+            "dims": {"theta_dim": int(theta_dim), "x_dim": int(x_dim)},
+            "model_type": str(model_type),
+        }
+    out.write_text(json.dumps(payload, indent=2))
 
 
 def create_train_state(
@@ -191,7 +242,8 @@ def train(
     the dataset in batches with shuffling. Remainder examples are dropped to keep
     batch shapes static for JIT compilation efficiency. Supports both NRE and BNRE
     training based on the bnre_gamma configuration. Includes early stopping based
-    on validation loss improvement.
+    on validation loss improvement. On successful completion, writes ``train_summary.json``
+    under the Hydra run directory (see ``write_train_summary``).
     
     Args:
         theta_train: Training parameter samples of shape (n_train, theta_dim).
@@ -301,6 +353,28 @@ def train(
                     f"val_loss {val_loss_float:.6f} | val_bce {float(val_bce_loss):.6f}"
                 )
 
+    theta_dim = int(theta_train.shape[1])
+    # x_dim: D for (N, D) vectors; sequence length T for (N, T, F) tokens (not T*F or F).
+    x_dim = int(x_train.shape[1])
+    if not math.isfinite(best_val_loss) and best_meta_path.exists():
+        meta = json.loads(best_meta_path.read_text())
+        best_val_loss = float(meta["val_loss"])
+        best_epoch = int(meta["epoch"])
+    if not math.isfinite(best_val_loss):
+        raise RuntimeError(
+            "Training ended without a finite best validation loss; cannot write train_summary.json"
+        )
+
+    write_train_summary(
+        run_dir,
+        status="ok",
+        model_type=cfg.model_type,
+        theta_dim=theta_dim,
+        x_dim=x_dim,
+        best_val_loss=best_val_loss,
+        best_epoch=best_epoch,
+    )
+
     return (
         state,
         jnp.stack(train_losses),
@@ -308,4 +382,3 @@ def train(
         jnp.stack(val_losses),
         jnp.stack(val_bce_losses),
     )
-    
