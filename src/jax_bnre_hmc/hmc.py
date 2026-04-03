@@ -1,10 +1,13 @@
 # src/jax_bnre_hmc/hmc.py
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Callable
+from pathlib import Path
+from typing import Callable, Literal
 
 import jax
+import numpy as np
 import jax.numpy as jnp
 from numpyro.infer import MCMC, NUTS
 
@@ -191,6 +194,59 @@ def run_nuts(
     )
     mcmc.run(rng_key, init_params=init_z)
     return mcmc
+
+
+def aggregate_nuts_divergences_and_mean_accept_prob(mcmc_runs: list) -> tuple[int, float]:
+    """Aggregate NumPyro NUTS diagnostics across one or more finished ``MCMC`` runs.
+
+    ``divergences``: total count of diverging transitions (warmup + sampling, all chains).
+    ``accept_prob``: mean of all per-step acceptance probabilities pooled across runs.
+    """
+    total_div = 0
+    ap_chunks: list[np.ndarray] = []
+    for mcmc in mcmc_runs:
+        extra = mcmc.get_extra_fields()
+        div = extra.get("diverging")
+        if div is not None:
+            total_div += int(np.sum(np.asarray(div, dtype=np.bool_)))
+        ap = extra.get("accept_prob")
+        if ap is not None:
+            ap_chunks.append(np.asarray(ap, dtype=np.float64).ravel())
+    if ap_chunks:
+        mean_ap = float(np.concatenate(ap_chunks).mean())
+    else:
+        mean_ap = 0.0
+    return total_div, mean_ap
+
+
+def write_hmc_summary(
+    output_dir: Path | str,
+    *,
+    status: Literal["ok", "error"],
+    divergences: int | None = None,
+    accept_prob: float | None = None,
+    posterior_samples_path: str | None = None,
+    message: str | None = None,
+) -> None:
+    """Write ``hmc_summary.json`` under ``output_dir`` (overwrites if present)."""
+    output_dir = Path(output_dir).resolve()
+    out = output_dir / "hmc_summary.json"
+    if status == "error":
+        payload = {"status": "error", "message": str(message) if message is not None else ""}
+    else:
+        if divergences is None or accept_prob is None or posterior_samples_path is None:
+            raise ValueError(
+                "write_hmc_summary(status='ok') requires divergences, accept_prob, "
+                "and posterior_samples_path"
+            )
+        payload = {
+            "status": "ok",
+            "divergences": int(divergences),
+            "accept_prob": float(accept_prob),
+            "posterior_samples_path": str(posterior_samples_path),
+        }
+    out.write_text(json.dumps(payload, indent=2))
+
 
 @jax.jit
 def points_in_hull(points: Array, equations: Array, tolerance: float = 1e-12) -> Array:

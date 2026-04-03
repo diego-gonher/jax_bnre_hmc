@@ -18,7 +18,15 @@ from sklearn.preprocessing import MinMaxScaler
 from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_config_path
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
-from jax_bnre_hmc.hmc import BoxPrior, make_log_ratio_fn, make_potential_fn, run_nuts, z_to_theta
+from jax_bnre_hmc.hmc import (
+    BoxPrior,
+    aggregate_nuts_divergences_and_mean_accept_prob,
+    make_log_ratio_fn,
+    make_potential_fn,
+    run_nuts,
+    write_hmc_summary,
+    z_to_theta,
+)
 from jax_bnre_hmc.model import RatioEstimatorMLP
 
 
@@ -27,160 +35,179 @@ numpyro.set_host_device_count(4)
 
 @hydra.main(config_path="../../configs/sinusoid", config_name="hmc", version_base="1.3")
 def main(cfg: DictConfig):
-    dataset_file = cfg.data.get("dataset_file")
-    if dataset_file is None:
-        raise ValueError(
-            "data.dataset_file must be set for sinusoid HMC "
-            "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
-        )
-    dataset_file = str(dataset_file)
-
     run_dir = Path(cfg.run_dir).resolve()
     output_dir = Path(cfg.output_dir).resolve() if cfg.output_dir else run_dir / "hmc_results"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "hmc.yaml").write_text(OmegaConf.to_yaml(cfg, resolve=True))
+    try:
+        dataset_file = cfg.data.get("dataset_file")
+        if dataset_file is None:
+            raise ValueError(
+                "data.dataset_file must be set for sinusoid HMC "
+                "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
+            )
+        dataset_file = str(dataset_file)
 
-    run_cfg = OmegaConf.load(resolve_run_train_config_path(run_dir))
-    ckpt_dirname = run_cfg.train.get("checkpoint_dirname", "checkpoints")
-    best_dir = run_dir / ckpt_dirname / "best"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "hmc.yaml").write_text(OmegaConf.to_yaml(cfg, resolve=True))
 
-    model = RatioEstimatorMLP(
-        hidden_dims=tuple(run_cfg.model.hidden_dims),
-        activation=str(run_cfg.model.activation),
-        norm=str(run_cfg.model.norm),
-    )
-    params = load_best_params(best_dir=best_dir)
+        run_cfg = OmegaConf.load(resolve_run_train_config_path(run_dir))
+        ckpt_dirname = run_cfg.train.get("checkpoint_dirname", "checkpoints")
+        best_dir = run_dir / ckpt_dirname / "best"
 
-    print(f"\nLoading dataset from {dataset_file}")
-    loaded = load_hdf5_dataset(dataset_file, validate=True)
-    splits = loaded.splits
+        model = RatioEstimatorMLP(
+            hidden_dims=tuple(run_cfg.model.hidden_dims),
+            activation=str(run_cfg.model.activation),
+            norm=str(run_cfg.model.norm),
+        )
+        params = load_best_params(best_dir=best_dir)
 
-    theta_train_raw = splits.theta_train
-    x_train_raw = splits.x_train
-    theta_test_raw = splits.theta_test
-    x_test_raw = splits.x_test
+        print(f"\nLoading dataset from {dataset_file}")
+        loaded = load_hdf5_dataset(dataset_file, validate=True)
+        splits = loaded.splits
 
-    # Same scaling as train.py: MinMaxScaler(-1, 1) fit on train only, then transform test
-    theta_scaler = MinMaxScaler(feature_range=(-1, 1))
-    x_scaler = MinMaxScaler(feature_range=(-1, 1))
-    theta_scaler.fit(theta_train_raw)
-    x_scaler.fit(x_train_raw)
+        theta_train_raw = splits.theta_train
+        x_train_raw = splits.x_train
+        theta_test_raw = splits.theta_test
+        x_test_raw = splits.x_test
 
-    theta_test = np.asarray(theta_scaler.transform(theta_test_raw), dtype=np.float64)
-    x_test = np.asarray(x_scaler.transform(x_test_raw), dtype=np.float64)
+        # Same scaling as train.py: MinMaxScaler(-1, 1) fit on train only, then transform test
+        theta_scaler = MinMaxScaler(feature_range=(-1, 1))
+        x_scaler = MinMaxScaler(feature_range=(-1, 1))
+        theta_scaler.fit(theta_train_raw)
+        x_scaler.fit(x_train_raw)
 
-    print(f"theta_test shape (scaled): {theta_test.shape}")
-    print(f"x_test shape (scaled):     {x_test.shape}")
+        theta_test = np.asarray(theta_scaler.transform(theta_test_raw), dtype=np.float64)
+        x_test = np.asarray(x_scaler.transform(x_test_raw), dtype=np.float64)
 
-    n_obs = int(cfg.n_observations)
-    seed = int(cfg.seed)
-    if n_obs > theta_test.shape[0]:
-        raise ValueError(
-            f"Requested n_observations={n_obs} but test split only has {theta_test.shape[0]} samples."
+        print(f"theta_test shape (scaled): {theta_test.shape}")
+        print(f"x_test shape (scaled):     {x_test.shape}")
+
+        n_obs = int(cfg.n_observations)
+        seed = int(cfg.seed)
+        if n_obs > theta_test.shape[0]:
+            raise ValueError(
+                f"Requested n_observations={n_obs} but test split only has {theta_test.shape[0]} samples."
+            )
+
+        # Select a deterministic subset of the test split
+        rng = np.random.default_rng(seed)
+        indices = rng.choice(theta_test.shape[0], size=n_obs, replace=False)
+        theta_true = theta_test[indices]
+        x_obs = x_test[indices]
+
+        prior = BoxPrior(
+            low=jnp.array(cfg.prior.low, dtype=jnp.float64),
+            high=jnp.array(cfg.prior.high, dtype=jnp.float64),
         )
 
-    # Select a deterministic subset of the test split
-    rng = np.random.default_rng(seed)
-    indices = rng.choice(theta_test.shape[0], size=n_obs, replace=False)
-    theta_true = theta_test[indices]
-    x_obs = x_test[indices]
+        num_chains = int(cfg.num_chains)
+        posteriors_list = []
+        mcmc_runs = []
+        print("Starting inference")
+        for i in range(n_obs):
+            print(f"\nRunning observation {i+1}/{n_obs}")
+            x_obs_i = x_obs[i].squeeze()
+            log_ratio = make_log_ratio_fn(model.apply, params, x_obs_i)
+            potential = make_potential_fn(log_ratio, prior)
+            D = prior.low.shape[0]
+            init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
+            mcmc = run_nuts(
+                potential,
+                jax.random.PRNGKey(seed + i),
+                init_z,
+                num_warmup=int(cfg.num_warmup),
+                num_samples=int(cfg.num_samples),
+                num_chains=num_chains,
+            )
+            mcmc_runs.append(mcmc)
+            z_samples = mcmc.get_samples(group_by_chain=False)
+            theta_samples, _ = jax.vmap(lambda z: z_to_theta(z, prior))(z_samples)
+            posteriors_list.append(theta_samples)
+            print(theta_samples.shape)
+            print(mcmc.print_summary())
 
-    prior = BoxPrior(
-        low=jnp.array(cfg.prior.low, dtype=jnp.float64),
-        high=jnp.array(cfg.prior.high, dtype=jnp.float64),
-    )
+        posterior_samples = jnp.stack(posteriors_list, axis=1)
+        posterior_samples = jnp.transpose(posterior_samples, (1, 2, 0))
+        print("All done.")
+        print("Posterior samples shape:", posterior_samples.shape)
 
-    num_chains = int(cfg.num_chains)
-    posteriors_list = []
-    print("Starting inference")
-    for i in range(n_obs):
-        print(f"\nRunning observation {i+1}/{n_obs}")
-        x_obs_i = x_obs[i].squeeze()
-        log_ratio = make_log_ratio_fn(model.apply, params, x_obs_i)
-        potential = make_potential_fn(log_ratio, prior)
-        D = prior.low.shape[0]
-        init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
-        mcmc = run_nuts(
-            potential,
-            jax.random.PRNGKey(seed + i),
-            init_z,
-            num_warmup=int(cfg.num_warmup),
-            num_samples=int(cfg.num_samples),
-            num_chains=num_chains,
+        # Use parameter labels from metadata if available, otherwise fall back to config/default
+        theta_names = None
+        if loaded.metadata is not None and loaded.metadata.theta_names:
+            theta_names = list(loaded.metadata.theta_names)
+
+        n_plots = min(int(cfg.n_plots), n_obs)
+        rng = np.random.default_rng(1234)
+        selected_indices = rng.choice(n_obs, size=n_plots, replace=False)
+        corner_labels = theta_names or list(cfg.get("corner_labels", ["A", "f", "phi", "b"]))
+
+        for idx in selected_indices:
+            samples = np.array(posterior_samples[idx].T)
+            true_params = np.array(theta_true[idx])
+            figure = corner.corner(
+                samples,
+                labels=corner_labels,
+                truths=true_params,
+                show_titles=True,
+                title_fmt=".3f",
+                title_kwargs={"fontsize": 12},
+            )
+            figure.suptitle(f"Posterior for Observation {idx}", fontsize=16)
+            figure.savefig(output_dir / f"corner_observation_{idx}.png")
+            print(f"Saved corner plot for observation {idx}")
+            plt.close(figure)
+
+        posterior_samples = jnp.transpose(posterior_samples, (2, 0, 1))
+        key = jax.random.PRNGKey(42)
+        key, subkey = jax.random.split(key)
+        references = jax.random.uniform(
+            subkey,
+            shape=(n_obs, len(cfg.prior.low)),
+            minval=jnp.array(cfg.prior.low, dtype=jnp.float64),
+            maxval=jnp.array(cfg.prior.high, dtype=jnp.float64),
         )
-        z_samples = mcmc.get_samples(group_by_chain=False)
-        theta_samples, _ = jax.vmap(lambda z: z_to_theta(z, prior))(z_samples)
-        posteriors_list.append(theta_samples)
-        print(theta_samples.shape)
-        print(mcmc.print_summary())
-
-    posterior_samples = jnp.stack(posteriors_list, axis=1)
-    posterior_samples = jnp.transpose(posterior_samples, (1, 2, 0))
-    print("All done.")
-    print("Posterior samples shape:", posterior_samples.shape)
-
-    # Use parameter labels from metadata if available, otherwise fall back to config/default
-    theta_names = None
-    if loaded.metadata is not None and loaded.metadata.theta_names:
-        theta_names = list(loaded.metadata.theta_names)
-
-    n_plots = min(int(cfg.n_plots), n_obs)
-    rng = np.random.default_rng(1234)
-    selected_indices = rng.choice(n_obs, size=n_plots, replace=False)
-    corner_labels = theta_names or list(cfg.get("corner_labels", ["A", "f", "phi", "b"]))
-
-    for idx in selected_indices:
-        samples = np.array(posterior_samples[idx].T)
-        true_params = np.array(theta_true[idx])
-        figure = corner.corner(
-            samples,
-            labels=corner_labels,
-            truths=true_params,
-            show_titles=True,
-            title_fmt=".3f",
-            title_kwargs={"fontsize": 12},
+        ecp, alpha_grid = run_tarp_jax(
+            posterior_samples=posterior_samples,
+            thetas=theta_true,
+            references=references,
+            distance=l2_distance,
+            num_bins=30,
+            z_score_theta=True,
+            eps=1e-10,
         )
-        figure.suptitle(f"Posterior for Observation {idx}", fontsize=16)
-        figure.savefig(output_dir / f"corner_observation_{idx}.png")
-        print(f"Saved corner plot for observation {idx}")
-        plt.close(figure)
+        plt.figure(figsize=(5, 5))
+        plt.plot(alpha_grid, ecp, marker="o")
+        plt.plot([0, 1], [0, 1], "k--", label="Ideal")
+        plt.xlabel("Credibility Level (α)")
+        plt.ylabel("Empirical Coverage Probability (ECP)")
+        plt.title("TARP: Empirical Coverage Probability Curve")
+        plt.axis("square")
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+        plt.grid()
+        plt.legend()
+        plt.savefig(output_dir / "tarp_ecp_curve.png")
+        plt.close()
 
-    posterior_samples = jnp.transpose(posterior_samples, (2, 0, 1))
-    key = jax.random.PRNGKey(42)
-    key, subkey = jax.random.split(key)
-    references = jax.random.uniform(
-        subkey,
-        shape=(n_obs, len(cfg.prior.low)),
-        minval=jnp.array(cfg.prior.low, dtype=jnp.float64),
-        maxval=jnp.array(cfg.prior.high, dtype=jnp.float64),
-    )
-    ecp, alpha_grid = run_tarp_jax(
-        posterior_samples=posterior_samples,
-        thetas=theta_true,
-        references=references,
-        distance=l2_distance,
-        num_bins=30,
-        z_score_theta=True,
-        eps=1e-10,
-    )
-    plt.figure(figsize=(5, 5))
-    plt.plot(alpha_grid, ecp, marker="o")
-    plt.plot([0, 1], [0, 1], "k--", label="Ideal")
-    plt.xlabel("Credibility Level (α)")
-    plt.ylabel("Empirical Coverage Probability (ECP)")
-    plt.title("TARP: Empirical Coverage Probability Curve")
-    plt.axis("square")
-    plt.xlim(0, 1)
-    plt.ylim(0, 1)
-    plt.grid()
-    plt.legend()
-    plt.savefig(output_dir / "tarp_ecp_curve.png")
-    plt.close()
+        with h5py.File(output_dir / "posterior_samples.h5", "w") as f:
+            f.create_dataset("posterior_samples", data=np.array(posterior_samples))
+            f.create_dataset("theta_true", data=np.array(theta_true))
+            f.create_dataset("x_obs", data=np.array(x_obs))
 
-    with h5py.File(output_dir / "posterior_samples.h5", "w") as f:
-        f.create_dataset("posterior_samples", data=np.array(posterior_samples))
-        f.create_dataset("theta_true", data=np.array(theta_true))
-        f.create_dataset("x_obs", data=np.array(x_obs))
+        total_div, mean_accept = aggregate_nuts_divergences_and_mean_accept_prob(mcmc_runs)
+        write_hmc_summary(
+            output_dir,
+            status="ok",
+            divergences=total_div,
+            accept_prob=mean_accept,
+            posterior_samples_path="posterior_samples.h5",
+        )
+    except Exception as e:
+        run_dir = Path(cfg.run_dir).resolve()
+        output_dir = Path(cfg.output_dir).resolve() if cfg.output_dir else run_dir / "hmc_results"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        msg = str(e) if str(e) else type(e).__name__
+        write_hmc_summary(output_dir, status="error", message=msg)
+        raise
 
 
 if __name__ == "__main__":
