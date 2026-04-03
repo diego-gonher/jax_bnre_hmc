@@ -20,7 +20,7 @@ from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 from jax_bnre_hmc.hmc import (
     BoxPrior,
-    aggregate_nuts_divergences_and_mean_accept_prob,
+    aggregate_nuts_divergences,
     make_log_ratio_fn,
     make_potential_fn,
     run_nuts,
@@ -193,12 +193,11 @@ def main(cfg: DictConfig):
             f.create_dataset("theta_true", data=np.array(theta_true))
             f.create_dataset("x_obs", data=np.array(x_obs))
 
-        total_div, mean_accept = aggregate_nuts_divergences_and_mean_accept_prob(mcmc_runs)
+        total_div = aggregate_nuts_divergences(mcmc_runs)
         write_hmc_summary(
             output_dir,
             status="ok",
             divergences=total_div,
-            accept_prob=mean_accept,
             posterior_samples_path="posterior_samples.h5",
         )
     except Exception as e:
