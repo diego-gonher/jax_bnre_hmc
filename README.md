@@ -59,7 +59,11 @@ The code is written to be:
 
 - **`hmc.py`, `diagnostics.py`**  
   - Utilities for running HMC (NumPyro-based) using the learned ratio estimator, and for inspecting / diagnosing chains.  
-  - **`diagnostics.py`** also provides **TARP** coverage curves (`run_tarp_jax`), **simulation-based calibration (SBC)** from posterior samples (`run_sbc_from_samples`, `check_sbc` with marginal rank **KS p-values** per parameter), and optional **SBC rank histogram** plotting (`plot_sbc_rank_histograms`). Canonical HMC scripts run TARP and SBC and record summary metrics in `hmc_summary.json` (see below).
+  - **`diagnostics.py`** also provides **TARP** coverage curves (`run_tarp_jax`), **simulation-based calibration (SBC)** from posterior samples (`run_sbc_from_samples`, `check_sbc` with marginal rank **KS p-values** per parameter), and optional **SBC rank histogram** plotting (`plot_sbc_rank_histograms`). Canonical HMC scripts run TARP and SBC and record summary metrics in `hmc_summary.json` (see below).  
+  - TARP and SBC capture complementary aspects of calibration:  
+    - TARP evaluates global coverage behavior of the posterior.  
+    - SBC evaluates marginal calibration for each parameter.  
+  - It is possible for TARP to appear well-calibrated while SBC reveals biases in individual parameters.
 
 ### Configs (`configs/`)
 
@@ -152,6 +156,15 @@ Written under **`output_dir`** (default `run_dir/hmc_results/`) by the canonical
 | `tarp_mae` | Mean absolute error between the TARP empirical coverage curve and the diagonal: `mean(|ecp − α|)` over the TARP grid. |
 | `tarp_iae` | Integrated absolute error: `trapz(|ecp − α|, α)` over the same grid. |
 | `posterior_samples_path` | Relative path to the HDF5 file with posterior samples (typically `posterior_samples.h5`). |
+
+**Interpretation:**
+
+- Lower `tarp_mae` / `tarp_iae` → better global calibration (ideal = 0).  
+- Higher `sbc_ks_pval_min` / `sbc_ks_pval_mean` → better marginal calibration (values near 1 indicate consistency with uniform ranks).  
+- Low `sbc_ks_pval_min` (e.g. < 0.05) indicates at least one parameter is miscalibrated.  
+- Nonzero `divergences_*` indicate potential HMC geometry issues; lower is better.
+
+SBC is performed in the same parameter space used by HMC (i.e., after any scaling or transformations applied in the experiment scripts).
 
 Per-dimension **SBC KS p-values** and raw **TARP** curves are also printed and saved in **`hmc_metrics.txt`** and plots (`sbc_rank_histograms.png`, `tarp_ecp_curve.png`) in the same folder.
 
@@ -338,6 +351,12 @@ python experiments/sinusoid_transformer/hmc.py \
 ```
 
 By default, if `output_dir: null`, results are written to `run_dir/hmc_results/`. That folder includes **`hmc_summary.json`**, **`hmc_metrics.txt`**, TARP/SBC plots, and **`posterior_samples.h5`** (see [Run summary JSON files](#run-summary-json-files)).
+
+Posterior samples in **`posterior_samples.h5`** are stored with shape `(S, N, D)`:
+
+- **`S`**: number of samples (chains × draws).  
+- **`N`**: number of observations.  
+- **`D`**: parameter dimension.
 
 ### What `hmc.yaml` controls
 
