@@ -58,7 +58,8 @@ The code is written to be:
   - `write_meta`: Writes small JSON metadata (`epoch`, `val_loss`) for latest/best.
 
 - **`hmc.py`, `diagnostics.py`**  
-  - Utilities for running HMC (NumPyro-based) using the learned ratio estimator, and for inspecting / diagnosing chains. (See the experiment scripts below for concrete usage.)
+  - Utilities for running HMC (NumPyro-based) using the learned ratio estimator, and for inspecting / diagnosing chains.  
+  - **`diagnostics.py`** also provides **TARP** coverage curves (`run_tarp_jax`), **simulation-based calibration (SBC)** from posterior samples (`run_sbc_from_samples`, `check_sbc` with marginal rank **KS p-values** per parameter), and optional **SBC rank histogram** plotting (`plot_sbc_rank_histograms`). Canonical HMC scripts run TARP and SBC and record summary metrics in `hmc_summary.json` (see below).
 
 ### Configs (`configs/`)
 
@@ -104,6 +105,62 @@ Inside you’ll find:
   - `latest/` – full `TrainState` (latest epoch).  
   - `best/` – best params only.  
   - `latest_meta.json`, `best_meta.json` – small JSON metadata with `epoch` and `val_loss`.
+- **`train_summary.json`** – machine-readable training outcome (see [Run summary JSON files](#run-summary-json-files)).
+
+---
+
+## Run summary JSON files
+
+Small JSON files record outcomes for training runs and for HMC inference folders. They are written by `write_train_summary` (`src/jax_bnre_hmc/train.py`) and `write_hmc_summary` (`src/jax_bnre_hmc/hmc.py`).
+
+### `train_summary.json` (training run directory)
+
+Written at the **Hydra run root** (e.g. `outputs/<exp_name>/<timestamp>/`) when training finishes successfully, or with `status: "error"` if the script catches a failure.
+
+**Success (`status: "ok"`):**
+
+| Field | Meaning |
+|-------|---------|
+| `status` | Always `"ok"` for a completed run that wrote this schema. |
+| `best_val_loss` | Validation loss at the best checkpoint (matches `checkpoints/best/best_meta.json`). |
+| `best_epoch` | 1-based epoch index when that best checkpoint was saved. |
+| `dims.theta_dim` | Parameter dimension \(D\) (columns of `theta_train`). |
+| `dims.x_dim` | Observation “width”: for flat \(x\) of shape `(N, D)`, this is `D`; for token inputs `(N, T, F)` (e.g. transformer), this is the sequence length `T`. |
+| `model_type` | Coarse architecture label from config (e.g. `mlp`, `transformer`). |
+
+**Error (`status: "error"`):**
+
+| Field | Meaning |
+|-------|---------|
+| `status` | `"error"`. |
+| `message` | Optional error description (omitted if no message was passed). |
+
+### `hmc_summary.json` (HMC output directory)
+
+Written under **`output_dir`** (default `run_dir/hmc_results/`) by the canonical HMC scripts after posterior samples, TARP, and SBC. On failure, only an error payload is written.
+
+**Success (`status: "ok"`):**
+
+| Field | Meaning |
+|-------|---------|
+| `status` | `"ok"`. |
+| `divergences_total` | Total count of diverging NUTS transitions (warmup + sampling, all chains, all observations). |
+| `divergences_per_observation` | `divergences_total / n_observations`. |
+| `divergences_per_observation_per_chain` | `divergences_total / (n_observations × num_chains)`. |
+| `sbc_ks_pval_min` | Minimum Kolmogorov–Smirnov p-value across **marginal SBC rank** columns (uniformity of ranks under calibration; see `check_sbc` in `diagnostics.py`). |
+| `sbc_ks_pval_mean` | Mean of those marginal KS p-values. |
+| `tarp_mae` | Mean absolute error between the TARP empirical coverage curve and the diagonal: `mean(|ecp − α|)` over the TARP grid. |
+| `tarp_iae` | Integrated absolute error: `trapz(|ecp − α|, α)` over the same grid. |
+| `posterior_samples_path` | Relative path to the HDF5 file with posterior samples (typically `posterior_samples.h5`). |
+
+Per-dimension **SBC KS p-values** and raw **TARP** curves are also printed and saved in **`hmc_metrics.txt`** and plots (`sbc_rank_histograms.png`, `tarp_ecp_curve.png`) in the same folder.
+
+**Error (`status: "error"`):**
+
+| Field | Meaning |
+|-------|---------|
+| `status` | `"error"`. |
+| `message` | Error description. |
 
 ---
 
@@ -280,7 +337,7 @@ python experiments/sinusoid_transformer/hmc.py \
   data.dataset_file=/absolute/path/to/sinusoid_noisy_with_masks.h5
 ```
 
-By default, if `output_dir: null`, results are written to `run_dir/hmc_results/`.
+By default, if `output_dir: null`, results are written to `run_dir/hmc_results/`. That folder includes **`hmc_summary.json`**, **`hmc_metrics.txt`**, TARP/SBC plots, and **`posterior_samples.h5`** (see [Run summary JSON files](#run-summary-json-files)).
 
 ### What `hmc.yaml` controls
 
