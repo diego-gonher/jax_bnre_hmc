@@ -26,7 +26,13 @@ from jax_bnre_hmc.hmc import (
     z_to_theta,
 )
 from jax_bnre_hmc.model import RatioEstimatorTransformer
-from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
+from jax_bnre_hmc.diagnostics import (
+    check_sbc,
+    plot_sbc_rank_histograms,
+    run_sbc_from_samples,
+    run_tarp_jax,
+    l2_distance,
+)
 
 numpyro.set_host_device_count(4)
 
@@ -216,6 +222,60 @@ def main(cfg: DictConfig):
         print(f"Saved posterior samples to {output_dir / 'posterior_samples.h5'}")
 
         total_div = aggregate_nuts_divergences(mcmc_runs)
+
+        sbc_key = jax.random.PRNGKey(seed)
+        ranks, dap_samples = run_sbc_from_samples(
+            np.asarray(theta_true, dtype=np.float64),
+            np.asarray(posterior_samples_tarp, dtype=np.float64),
+            reduce_fns="marginals",
+            rng_key=sbc_key,
+        )
+        sbc_num_samples = int(np.asarray(posterior_samples_tarp).shape[0])
+        prior_key = jax.random.PRNGKey(seed + 1)
+        prior_samples = jax.random.uniform(
+            prior_key,
+            shape=np.asarray(theta_true).shape,
+            minval=jnp.array(cfg.prior.low, dtype=jnp.float64),
+            maxval=jnp.array(cfg.prior.high, dtype=jnp.float64),
+        )
+        sbc_check = check_sbc(
+            ranks,
+            np.asarray(prior_samples, dtype=np.float64),
+            np.asarray(dap_samples, dtype=np.float64),
+            num_posterior_samples=sbc_num_samples,
+        )
+        ks_pvals = np.asarray(sbc_check["ks_pvals"], dtype=np.float64)
+        ks_pval_min = float(np.min(ks_pvals))
+        ks_pval_mean = float(np.mean(ks_pvals))
+        print("\nSBC results")
+        print(f"ks_pvals: {ks_pvals}")
+        print(f"ks_pval_min: {ks_pval_min}")
+        print(f"ks_pval_mean: {ks_pval_mean}")
+
+        sbc_labels = corner_labels if len(corner_labels) == ranks.shape[1] else None
+        fig_sbc, _ = plot_sbc_rank_histograms(
+            ranks,
+            sbc_num_samples,
+            labels=sbc_labels,
+            ks_pvals=ks_pvals,
+            output_path=output_dir / "sbc_rank_histograms.png",
+        )
+        plt.close(fig_sbc)
+
+        metrics_lines = [
+            "HMC metrics",
+            "-----------",
+            f"divergences: {total_div}",
+            "",
+            "SBC metrics",
+            "-----------",
+            f"ks_pvals: {np.array2string(ks_pvals, separator=', ')}",
+            f"ks_pval_min: {ks_pval_min}",
+            f"ks_pval_mean: {ks_pval_mean}",
+            "",
+        ]
+        (output_dir / "hmc_metrics.txt").write_text("\n".join(metrics_lines))
+
         write_hmc_summary(
             output_dir,
             status="ok",
