@@ -211,13 +211,15 @@ def write_hmc_summary(
     output_dir: Path | str,
     *,
     status: Literal["ok", "error"],
-    divergences: int | None = None,
+    divergences_total: int | None = None,
     posterior_samples_path: str | None = None,
     message: str | None = None,
     divergences_per_observation: float | None = None,
     divergences_per_observation_per_chain: float | None = None,
     sbc_ks_pval_min: float | None = None,
     sbc_ks_pval_mean: float | None = None,
+    tarp_mae: float | None = None,
+    tarp_iae: float | None = None,
 ) -> None:
     """Write ``hmc_summary.json`` under ``output_dir`` (overwrites if present)."""
     output_dir = Path(output_dir).resolve()
@@ -226,22 +228,24 @@ def write_hmc_summary(
         payload = {"status": "error", "message": str(message) if message is not None else ""}
     else:
         if (
-            divergences is None
+            divergences_total is None
             or posterior_samples_path is None
             or divergences_per_observation is None
             or divergences_per_observation_per_chain is None
             or sbc_ks_pval_min is None
             or sbc_ks_pval_mean is None
+            or tarp_mae is None
+            or tarp_iae is None
         ):
             raise ValueError(
-                "write_hmc_summary(status='ok') requires divergences, posterior_samples_path, "
-                "divergences_per_observation, divergences_per_observation_per_chain, "
-                "sbc_ks_pval_min, and sbc_ks_pval_mean"
+                "write_hmc_summary(status='ok') requires divergences_total, "
+                "posterior_samples_path, divergences_per_observation, "
+                "divergences_per_observation_per_chain, sbc_ks_pval_min, sbc_ks_pval_mean, "
+                "tarp_mae, and tarp_iae"
             )
-        div_i = int(divergences)
+        div_i = int(divergences_total)
         payload = {
             "status": "ok",
-            "divergences": div_i,
             "divergences_total": div_i,
             "divergences_per_observation": float(divergences_per_observation),
             "divergences_per_observation_per_chain": float(
@@ -249,6 +253,8 @@ def write_hmc_summary(
             ),
             "sbc_ks_pval_min": float(sbc_ks_pval_min),
             "sbc_ks_pval_mean": float(sbc_ks_pval_mean),
+            "tarp_mae": float(tarp_mae),
+            "tarp_iae": float(tarp_iae),
             "posterior_samples_path": str(posterior_samples_path),
         }
     out.write_text(json.dumps(payload, indent=2))

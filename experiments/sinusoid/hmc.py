@@ -180,6 +180,10 @@ def main(cfg: DictConfig):
             z_score_theta=True,
             eps=1e-10,
         )
+        alpha_np = np.asarray(alpha_grid)
+        ecp_np = np.asarray(ecp)
+        tarp_mae = float(np.mean(np.abs(ecp_np - alpha_np)))
+        tarp_iae = float(np.trapz(np.abs(ecp_np - alpha_np), alpha_np))
         plt.figure(figsize=(5, 5))
         plt.plot(alpha_grid, ecp, marker="o")
         plt.plot([0, 1], [0, 1], "k--", label="Ideal")
@@ -261,11 +265,13 @@ def main(cfg: DictConfig):
         write_hmc_summary(
             output_dir,
             status="ok",
-            divergences=total_div,
+            divergences_total=total_div,
             divergences_per_observation=div_per_obs,
             divergences_per_observation_per_chain=div_per_obs_chain,
             sbc_ks_pval_min=ks_pval_min,
             sbc_ks_pval_mean=ks_pval_mean,
+            tarp_mae=tarp_mae,
+            tarp_iae=tarp_iae,
             posterior_samples_path="posterior_samples.h5",
         )
     except Exception as e:
