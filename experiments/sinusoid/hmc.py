@@ -254,10 +254,18 @@ def main(cfg: DictConfig):
         ]
         (output_dir / "hmc_metrics.txt").write_text("\n".join(metrics_lines))
 
+        n_obs_f = float(n_obs)
+        num_chains_f = float(num_chains)
+        div_per_obs = float(total_div) / n_obs_f
+        div_per_obs_chain = float(total_div) / (n_obs_f * num_chains_f)
         write_hmc_summary(
             output_dir,
             status="ok",
             divergences=total_div,
+            divergences_per_observation=div_per_obs,
+            divergences_per_observation_per_chain=div_per_obs_chain,
+            sbc_ks_pval_min=ks_pval_min,
+            sbc_ks_pval_mean=ks_pval_mean,
             posterior_samples_path="posterior_samples.h5",
         )
     except Exception as e:

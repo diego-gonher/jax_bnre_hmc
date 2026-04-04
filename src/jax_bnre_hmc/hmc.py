@@ -214,6 +214,10 @@ def write_hmc_summary(
     divergences: int | None = None,
     posterior_samples_path: str | None = None,
     message: str | None = None,
+    divergences_per_observation: float | None = None,
+    divergences_per_observation_per_chain: float | None = None,
+    sbc_ks_pval_min: float | None = None,
+    sbc_ks_pval_mean: float | None = None,
 ) -> None:
     """Write ``hmc_summary.json`` under ``output_dir`` (overwrites if present)."""
     output_dir = Path(output_dir).resolve()
@@ -221,13 +225,30 @@ def write_hmc_summary(
     if status == "error":
         payload = {"status": "error", "message": str(message) if message is not None else ""}
     else:
-        if divergences is None or posterior_samples_path is None:
+        if (
+            divergences is None
+            or posterior_samples_path is None
+            or divergences_per_observation is None
+            or divergences_per_observation_per_chain is None
+            or sbc_ks_pval_min is None
+            or sbc_ks_pval_mean is None
+        ):
             raise ValueError(
-                "write_hmc_summary(status='ok') requires divergences and posterior_samples_path"
+                "write_hmc_summary(status='ok') requires divergences, posterior_samples_path, "
+                "divergences_per_observation, divergences_per_observation_per_chain, "
+                "sbc_ks_pval_min, and sbc_ks_pval_mean"
             )
+        div_i = int(divergences)
         payload = {
             "status": "ok",
-            "divergences": int(divergences),
+            "divergences": div_i,
+            "divergences_total": div_i,
+            "divergences_per_observation": float(divergences_per_observation),
+            "divergences_per_observation_per_chain": float(
+                divergences_per_observation_per_chain
+            ),
+            "sbc_ks_pval_min": float(sbc_ks_pval_min),
+            "sbc_ks_pval_mean": float(sbc_ks_pval_mean),
             "posterior_samples_path": str(posterior_samples_path),
         }
     out.write_text(json.dumps(payload, indent=2))
