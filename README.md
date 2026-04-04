@@ -62,37 +62,30 @@ The code is written to be:
 
 ### Configs (`configs/`)
 
-Hydra configs describing simulators, priors, model architecture, and training settings:
+Hydra configs for model architecture, training, and (for HMC) inference settings. The **canonical templates** are:
 
-- **`configs/linear_toy/train.yaml`** – linear regression toy example.  
-- **`configs/sinusoid/train.yaml`** – sinusoid regression example.  
-- **`configs/2param/train.yaml`** – two-parameter experiment.
+- **`configs/sinusoid/train.yaml`** / **`configs/sinusoid/hmc.yaml`** – MLP ratio estimator on pre-split HDF5 data.  
+- **`configs/sinusoid_transformer/train.yaml`** / **`configs/sinusoid_transformer/hmc.yaml`** – transformer ratio estimator with optional observation masks (see below).
 
-Each config defines:
+Additional experiments (e.g. amber501) have their own folders under `configs/`.
 
-- **`prior`**: Parameter ranges.  
-- **`data`**: Number of simulations, noise level, train/validation split.  
-- **`model`**: Hidden dimensions, activation, normalization.  
-- **`train`**: Learning rate, epochs, BNRE λ, batch size, gradient clipping, checkpointing settings, and early stopping (`stop_after_epochs`).
+Typical training keys in the canonical configs:
+
+- **`data`**: `dataset_file` path to an HDF5 file following the contract below.  
+- **`model`**: Architecture (MLP hidden dims / activation / norm, or transformer hyperparameters).  
+- **`train`**: Learning rate, epochs, BNRE weight (`bnre_gamma`), batch size, gradient clipping, checkpointing, and early stopping (`stop_after_epochs`).
 
 ### Experiments (`experiments/`)
 
-- **`experiments/linear_toy/train.py`**  
-  - Uses the linear simulator to generate \((\theta, x)\) pairs.  
-  - Splits into train/validation.  
-  - Builds `TrainConfig` from `configs/linear_toy/train.yaml`.  
-  - Calls `jax_bnre_hmc.train.train` to train NRE/BNRE.  
-  - Saves config, metrics, and plots to the Hydra run directory.  
-  - Loads the **best** saved parameters and verifies the validation loss.
-
-- **`experiments/linear_toy/hmc.py`**  
-  - Example of running HMC using the trained ratio estimator for the linear toy.
+**Canonical templates** (recommended starting points):
 
 - **`experiments/sinusoid/train.py`, `experiments/sinusoid/hmc.py`**  
-  - Similar structure for a sinusoidal simulator and its HMC-based posterior inference.
+  - Load pre-split HDF5 data, train an MLP ratio estimator, run NUTS/HMC on held-out observations.
 
-- **`experiments/2param/train.py`, `experiments/2param/hmc.py`**  
-  - Example for a two-parameter simulator.
+- **`experiments/sinusoid_transformer/train.py`, `experiments/sinusoid_transformer/hmc.py`**  
+  - Same workflow with masked 1D observations and a transformer ratio estimator.
+
+Other directories under `experiments/` (e.g. amber501) follow the same Hydra + `train` / `hmc` script pattern for domain-specific data.
 
 ### Outputs (`outputs/`)
 
@@ -167,16 +160,16 @@ Make sure you have a compatible JAX / JAXLIB / NumPyro stack; see `environment.y
 
 ---
 
-## Example: Linear Toy with BNRE + Early Stopping
+## Example: Sinusoid (canonical template)
 
-The simplest way to get started is to run the **linear toy** experiment.
+The simplest way to get started is the **`sinusoid`** experiment (MLP on HDF5 data). For **masked observations** and a transformer, use **`sinusoid_transformer`** the same way with `configs/sinusoid_transformer/train.yaml` and `python experiments/sinusoid_transformer/train.py`.
 
 ### 1. Inspect / tweak the config
 
-Open `configs/linear_toy/train.yaml`:
+Open `configs/sinusoid/train.yaml` (set `data.dataset_file` to your HDF5 path if needed):
 
 ```yaml
-exp_name: linear_toy
+exp_name: sinusoid
 
 hydra:
   job:
@@ -186,17 +179,8 @@ hydra:
 
 seed: 0
 
-prior:
-  m_low: 0.0
-  m_high: 1.0
-  b_low: 0.0
-  b_high: 1.0
-
 data:
-  n_simulations: 1024
-  n_points: 10
-  sigma: 0.1
-  validation_fraction: 0.2
+  dataset_file: datasets/sinusoid/sinusoid_noisy_no_masks.h5
 
 model:
   hidden_dims: [50, 50, 50]
@@ -206,41 +190,41 @@ model:
 train:
   lr: 0.0005
   epochs: 5000
-  bnre_lambda: 10000.0
+  bnre_gamma: 100.0
   batch_size: 128
-  print_every: 100
-  clip_max_norm: 5.00 # null for no clipping
-  save_every: 200      # save latest checkpoint every N epochs (0 or null to disable)
+  print_every: 10
+  clip_max_norm: 5.00
+  save_every: 500
   checkpoint_dirname: "checkpoints"
-  stop_after_epochs: 100  # early stopping patience (null to disable)
+  stop_after_epochs: 250
 ```
 
 Key knobs:
 
-- **`bnre_lambda`**: Set to `0.0` for standard NRE, or to a positive value to enable BNRE.  
+- **`train.bnre_gamma`**: Set to `0.0` for standard NRE, or positive for BNRE.  
 - **`stop_after_epochs`**: Early stopping patience based on validation loss.  
-- **`save_every`**, **`checkpoint_dirname`**: Control checkpointing frequency and location.
+- **`save_every`**, **`checkpoint_dirname`**: Checkpointing frequency and location.  
+- **`data.dataset_file`**: HDF5 path (see the dataset contract below).
 
 ### 2. Run training
 
 From the project root:
 
 ```bash
-python experiments/linear_toy/train.py
+python experiments/sinusoid/train.py
 ```
 
 This will:
 
-- Simulate data from the linear model.  
+- Load pre-split train/val/test data from the HDF5 file.  
 - Train an NRE/BNRE classifier with mini-batching, BNRE penalty, gradient clipping, checkpointing, and early stopping.  
-- Save metrics and plots under `outputs/linear_toy/...`.  
-- Save **latest** and **best** checkpoints under `outputs/linear_toy/.../checkpoints/`.  
-- Load the **best** checkpoint at the end and verify that recomputed validation loss matches the saved best value (up to stochasticity from shuffling).
+- Save `train.yaml`, `metrics.txt`, `train_summary.json`, plots, and checkpoints under `outputs/sinusoid/...`.  
+- Load the **best** checkpoint at the end and verify recomputed validation loss against metadata (up to shuffling stochasticity).
 
 You can override any config value from the command line via Hydra, e.g.:
 
 ```bash
-python experiments/linear_toy/train.py train.bnre_lambda=0.0 train.stop_after_epochs=null
+python experiments/sinusoid/train.py train.bnre_gamma=0.0 train.stop_after_epochs=null
 ```
 
 ---
@@ -285,13 +269,15 @@ prior:
 3. Run the HMC script, overriding any values you want. Examples:
 
 ```bash
-# Sinusoid: point to run_dir and dataset_file
+# Sinusoid (MLP): point to run_dir and dataset_file
 python experiments/sinusoid/hmc.py \
   run_dir=outputs/sinusoid/2026-03-15_17-48-50 \
-  data.dataset_file=/absolute/path/to/sinusoid_noisy_masked_*.h5
+  data.dataset_file=/absolute/path/to/sinusoid_noisy_no_masks.h5
 
-# Linear toy: simulate observations (dataset_file stays null)
-python experiments/linear_toy/hmc.py run_dir=outputs/linear_toy/<run_timestamp>
+# Sinusoid transformer: same pattern with the masked HDF5 and transformer run_dir
+python experiments/sinusoid_transformer/hmc.py \
+  run_dir=outputs/sinusoid_transformer/<run_timestamp> \
+  data.dataset_file=/absolute/path/to/sinusoid_noisy_with_masks.h5
 ```
 
 By default, if `output_dir: null`, results are written to `run_dir/hmc_results/`.
@@ -314,19 +300,13 @@ The typical inference pattern is:
 - Define a surrogate log-likelihood (or likelihood-ratio) in terms of the model’s logits.  
 - Run HMC / NUTS in NumPyro to obtain posterior samples over \(\theta\).
 
-For concrete code, see:
-
-- `experiments/linear_toy/hmc.py`  
-- `experiments/sinusoid/hmc.py`  
-- `experiments/2param/hmc.py`
-
-These examples illustrate how to move from simulation-based training (BNRE) to full Bayesian inference (HMC) with the learned ratio estimator.
+For concrete code, see **`experiments/sinusoid/hmc.py`** and **`experiments/sinusoid_transformer/hmc.py`** (canonical templates for moving from BNRE training to HMC with the learned ratio estimator).
 
 ---
 
 ## Transformer ratio estimator for missing 1D data (masked observations)
 
-The `sinusoid_transformer` experiment provides a ratio estimator that handles **missing values** in 1D observations under the assumption that every observation lives on the **same grid** (e.g. time bins), but some entries can be invalid/missing.
+The second canonical template, **`sinusoid_transformer`**, uses a ratio estimator that handles **missing values** in 1D observations under the assumption that every observation lives on the **same grid** (e.g. time bins), but some entries can be invalid/missing.
 
 Representation:
 
