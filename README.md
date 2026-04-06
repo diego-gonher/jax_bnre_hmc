@@ -434,7 +434,7 @@ Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets
 Concrete example:
 
 ```text
-Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/lokta_volterra/lotka_volterra_no_masks.h5', experiment name 'lokta_volterra', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
+Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/lotka_volterra/lotka_volterra_no_masks.h5', experiment name 'lotka_volterra', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
 ```
 
 Expected outputs include a Hydra run directory under `outputs/<experiment_name>/...`, `train_summary.json`, `hmc_results/hmc_summary.json`, and a generated markdown report at `hmc_results/report.md`.
