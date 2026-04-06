@@ -124,7 +124,7 @@ You may:
 
 ### NOT allowed
 Do NOT:
-- modify `src/jax_bnre_hmc/`
+- modify core modules under `src/jax_bnre_hmc/` (training, loss, model, HMC, diagnostics, datasets, etc.) unless the user explicitly requests it
 - change dataset contract
 - change JSON summary schema
 - modify diagnostics logic
@@ -167,24 +167,33 @@ Do NOT rely on terminal logs.
 
 ## Report generation
 
+### Shared module (required)
+
+After training and HMC succeed, generate the markdown report with the shared API in **`jax_bnre_hmc.report`**:
+
+- `generate_report(run_dir, template_path, ...)` — fill the template for a specific Hydra run directory
+- `generate_report_for_experiment(exp_name, template_path, run_dir=None, ...)` — pick the latest run under `outputs/<exp_name>/` when `run_dir` is omitted
+
+Do **not** reimplement placeholder replacement, JSON loading, or corner-plot stitching in experiment scripts.
+
+If an experiment needs a CLI entrypoint, add a **thin wrapper only** (e.g. `experiments/<name>/report.py` calling `generate_report_for_experiment` with that experiment’s `exp_name` and `templates/report_template.md`).
+
 Template:
 - `templates/report_template.md`
 
-Output:
+Output (default):
 - `outputs/{experiment_name}/{timestamp}/hmc_results/report.md`
 
-Fill using:
-- `train_summary.json`
-- `hmc_summary.json`
+Inputs (handled by the module):
+- `train_summary.json`, `train.yaml` at the run root
+- `hmc_results/hmc_summary.json`
+- optional `hmc_results/corner_observation_<idx>.png` (up to the configured count)
 
-Include:
+Plots referenced in the template:
 - training loss plot
 - TARP plot
 - SBC plot
-- first 3 corner plots
-
-If fewer exist:
-- include available ones
+- corner plots (first N, skipping missing files)
 
 Do NOT:
 - interpret results
@@ -239,8 +248,8 @@ If not:
 → STOP and report error
 
 ### Step 7 — Generate report
-- fill template
-- save report
+- call `jax_bnre_hmc.report.generate_report_for_experiment` (or `generate_report` with an explicit `run_dir`) so `hmc_results/report.md` is written from `templates/report_template.md`
+- do not duplicate report logic in experiment code
 
 ---
 
