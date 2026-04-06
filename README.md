@@ -20,13 +20,13 @@ The code is written to be:
 ## Table of Contents
 
 - [Repository Structure](#repository-structure)
-- [Run summary JSON files](#run-summary-json-files)
-- [HDF5 training dataset contract](#hdf5-training-dataset-contract)
 - [Installation](#installation)
-- [Using Codex CLI for the agentic workflow](#using-codex-cli-for-the-agentic-workflow)
-- [Example: Sinusoid (canonical template)](#example-sinusoid-canonical-template)
+- [HDF5 training dataset contract](#hdf5-training-dataset-contract)
+- [Example: Sinusoid (end-to-end workflow)](#example-sinusoid-end-to-end-workflow)
 - [Using the Trained Ratio Estimator in HMC](#using-the-trained-ratio-estimator-in-hmc)
+- [Run summary JSON files](#run-summary-json-files)
 - [Transformer ratio estimator for missing 1D data (masked observations)](#transformer-ratio-estimator-for-missing-1d-data-masked-observations)
+- [Using Codex CLI for the agentic workflow](#using-codex-cli-for-the-agentic-workflow)
 
 ---
 
@@ -126,67 +126,17 @@ Inside you’ll find:
 
 ---
 
-## Run summary JSON files
+## Installation
 
-Small JSON files record outcomes for training runs and for HMC inference folders. They are written by `write_train_summary` (`src/jax_bnre_hmc/train.py`) and `write_hmc_summary` (`src/jax_bnre_hmc/hmc.py`).
+From the repository root:
 
-### `train_summary.json` (training run directory)
+```bash
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+pip install -e .
+```
 
-Written at the **Hydra run root** (e.g. `outputs/<exp_name>/<timestamp>/`) when training finishes successfully, or with `status: "error"` if the script catches a failure.
-
-**Success (`status: "ok"`):**
-
-| Field | Meaning |
-|-------|---------|
-| `status` | Always `"ok"` for a completed run that wrote this schema. |
-| `best_val_loss` | Validation loss at the best checkpoint (matches `checkpoints/best/best_meta.json`). |
-| `best_epoch` | 1-based epoch index when that best checkpoint was saved. |
-| `dims.theta_dim` | Parameter dimension \(D\) (columns of `theta_train`). |
-| `dims.x_dim` | Observation “width”: for flat \(x\) of shape `(N, D)`, this is `D`; for token inputs `(N, T, F)` (e.g. transformer), this is the sequence length `T`. |
-| `model_type` | Coarse architecture label from config (e.g. `mlp`, `transformer`). |
-
-**Error (`status: "error"`):**
-
-| Field | Meaning |
-|-------|---------|
-| `status` | `"error"`. |
-| `message` | Optional error description (omitted if no message was passed). |
-
-### `hmc_summary.json` (HMC output directory)
-
-Written under **`output_dir`** (default `run_dir/hmc_results/`) by the canonical HMC scripts after posterior samples, TARP, and SBC. On failure, only an error payload is written.
-
-**Success (`status: "ok"`):**
-
-| Field | Meaning |
-|-------|---------|
-| `status` | `"ok"`. |
-| `divergences_total` | Total count of diverging NUTS transitions (warmup + sampling, all chains, all observations). |
-| `divergences_per_observation` | `divergences_total / n_observations`. |
-| `divergences_per_observation_per_chain` | `divergences_total / (n_observations × num_chains)`. |
-| `sbc_ks_pval_min` | Minimum Kolmogorov–Smirnov p-value across **marginal SBC rank** columns (uniformity of ranks under calibration; see `check_sbc` in `diagnostics.py`). |
-| `sbc_ks_pval_mean` | Mean of those marginal KS p-values. |
-| `tarp_mae` | Mean absolute error between the TARP empirical coverage curve and the diagonal: `mean(|ecp − α|)` over the TARP grid. |
-| `tarp_iae` | Integrated absolute error: `trapz(|ecp − α|, α)` over the same grid. |
-| `posterior_samples_path` | Relative path to the HDF5 file with posterior samples (typically `posterior_samples.h5`). |
-
-**Interpretation:**
-
-- Lower `tarp_mae` / `tarp_iae` → better global calibration (ideal = 0).  
-- Higher `sbc_ks_pval_min` / `sbc_ks_pval_mean` → better marginal calibration (values near 1 indicate consistency with uniform ranks).  
-- Low `sbc_ks_pval_min` (e.g. < 0.05) indicates at least one parameter is miscalibrated.  
-- Nonzero `divergences_*` indicate potential HMC geometry issues; lower is better.
-
-SBC is performed in the same parameter space used by HMC (i.e., after any scaling or transformations applied in the experiment scripts).
-
-Per-dimension **SBC KS p-values** and raw **TARP** curves are also printed and saved in **`hmc_metrics.txt`** and plots (`sbc_rank_histograms.png`, `tarp_ecp_curve.png`) in the same folder.
-
-**Error (`status: "error"`):**
-
-| Field | Meaning |
-|-------|---------|
-| `status` | `"error"`. |
-| `message` | Error description. |
+Make sure you have a compatible JAX / JAXLIB / NumPyro stack; see `environment.yml` for one working environment.
 
 ---
 
@@ -229,52 +179,9 @@ No scaling, shuffling, or reshaping is applied in the loader (see `load_hdf5_dat
 
 ---
 
-## Installation
+## Example: Sinusoid (end-to-end workflow)
 
-From the repository root:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -e .
-```
-
-Make sure you have a compatible JAX / JAXLIB / NumPyro stack; see `environment.yml` for one working environment.
-
----
-
-## Using Codex CLI for the agentic workflow
-
-You can use Codex as a lightweight lab-technician layer for this repository. The expected workflow and constraints are documented in `AGENTS.md`, so start Codex from a shell where your intended Python environment is already activated, then give it a single natural-language prompt with:
-
-- dataset path
-- experiment name
-- whether masks are present
-- preprocessing instructions
-
-Codex should then follow the repository workflow: inspect the dataset, choose the correct canonical template, create/adapt experiment files, run training, run HMC, and generate the report.
-
-Reusable prompt template:
-
-```text
-Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/<dataset_folder>/<dataset_file>.h5', experiment name '<experiment_name>', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
-```
-
-Concrete example:
-
-```text
-Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/lokta_volterra/lotka_volterra_no_masks.h5', experiment name 'lokta_volterra', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
-```
-
-Expected outputs include a Hydra run directory under `outputs/<experiment_name>/...`, `train_summary.json`, `hmc_results/hmc_summary.json`, and a generated markdown report at `hmc_results/report.md`.
-
-You can compare reports across runs to inspect how configuration changes (for example changing `train.bnre_gamma`) affect recorded metrics and diagnostics.
-
----
-
-## Example: Sinusoid (canonical template)
-
-The simplest way to get started is the **`sinusoid`** experiment (MLP on HDF5 data). For **masked observations** and a transformer, use **`sinusoid_transformer`** the same way with `configs/sinusoid_transformer/train.yaml` and `python experiments/sinusoid_transformer/train.py`.
+The simplest way to get started is the **`sinusoid`** experiment (MLP on HDF5 data), following the full pipeline from training to HMC and saved outputs. For **masked observations** and a transformer, use **`sinusoid_transformer`** the same way with `configs/sinusoid_transformer/train.yaml` and `python experiments/sinusoid_transformer/train.py`.
 
 ### 1. Inspect / tweak the config
 
@@ -422,6 +329,70 @@ For concrete code, see **`experiments/sinusoid/hmc.py`** and **`experiments/sinu
 
 ---
 
+## Run summary JSON files
+
+Small JSON files record outcomes for training runs and for HMC inference folders. They are written by `write_train_summary` (`src/jax_bnre_hmc/train.py`) and `write_hmc_summary` (`src/jax_bnre_hmc/hmc.py`).
+
+### `train_summary.json` (training run directory)
+
+Written at the **Hydra run root** (e.g. `outputs/<exp_name>/<timestamp>/`) when training finishes successfully, or with `status: "error"` if the script catches a failure.
+
+**Success (`status: "ok"`):**
+
+| Field | Meaning |
+|-------|---------|
+| `status` | Always `"ok"` for a completed run that wrote this schema. |
+| `best_val_loss` | Validation loss at the best checkpoint (matches `checkpoints/best/best_meta.json`). |
+| `best_epoch` | 1-based epoch index when that best checkpoint was saved. |
+| `dims.theta_dim` | Parameter dimension \(D\) (columns of `theta_train`). |
+| `dims.x_dim` | Observation “width”: for flat \(x\) of shape `(N, D)`, this is `D`; for token inputs `(N, T, F)` (e.g. transformer), this is the sequence length `T`. |
+| `model_type` | Coarse architecture label from config (e.g. `mlp`, `transformer`). |
+
+**Error (`status: "error"`):**
+
+| Field | Meaning |
+|-------|---------|
+| `status` | `"error"`. |
+| `message` | Optional error description (omitted if no message was passed). |
+
+### `hmc_summary.json` (HMC output directory)
+
+Written under **`output_dir`** (default `run_dir/hmc_results/`) by the canonical HMC scripts after posterior samples, TARP, and SBC. On failure, only an error payload is written.
+
+**Success (`status: "ok"`):**
+
+| Field | Meaning |
+|-------|---------|
+| `status` | `"ok"`. |
+| `divergences_total` | Total count of diverging NUTS transitions (warmup + sampling, all chains, all observations). |
+| `divergences_per_observation` | `divergences_total / n_observations`. |
+| `divergences_per_observation_per_chain` | `divergences_total / (n_observations × num_chains)`. |
+| `sbc_ks_pval_min` | Minimum Kolmogorov–Smirnov p-value across **marginal SBC rank** columns (uniformity of ranks under calibration; see `check_sbc` in `diagnostics.py`). |
+| `sbc_ks_pval_mean` | Mean of those marginal KS p-values. |
+| `tarp_mae` | Mean absolute error between the TARP empirical coverage curve and the diagonal: `mean(|ecp − α|)` over the TARP grid. |
+| `tarp_iae` | Integrated absolute error: `trapz(|ecp − α|, α)` over the same grid. |
+| `posterior_samples_path` | Relative path to the HDF5 file with posterior samples (typically `posterior_samples.h5`). |
+
+**Interpretation:**
+
+- Lower `tarp_mae` / `tarp_iae` → better global calibration (ideal = 0).  
+- Higher `sbc_ks_pval_min` / `sbc_ks_pval_mean` → better marginal calibration (values near 1 indicate consistency with uniform ranks).  
+- Low `sbc_ks_pval_min` (e.g. < 0.05) indicates at least one parameter is miscalibrated.  
+- Nonzero `divergences_*` indicate potential HMC geometry issues; lower is better.
+
+SBC is performed in the same parameter space used by HMC (i.e., after any scaling or transformations applied in the experiment scripts).
+
+Per-dimension **SBC KS p-values** and raw **TARP** curves are also printed and saved in **`hmc_metrics.txt`** and plots (`sbc_rank_histograms.png`, `tarp_ecp_curve.png`) in the same folder.
+
+**Error (`status: "error"`):**
+
+| Field | Meaning |
+|-------|---------|
+| `status` | `"error"`. |
+| `message` | Error description. |
+
+---
+
 ## Transformer ratio estimator for missing 1D data (masked observations)
 
 The second canonical template, **`sinusoid_transformer`**, uses a ratio estimator that handles **missing values** in 1D observations under the assumption that every observation lives on the **same grid** (e.g. time bins), but some entries can be invalid/missing.
@@ -440,3 +411,32 @@ See:
 
 - `experiments/sinusoid_transformer/train.py` for preprocessing and tokenization into `x_tokens`.
 - `configs/sinusoid_transformer/hmc.yaml` and `experiments/sinusoid_transformer/hmc.py` for inference using the same representation.
+
+---
+
+## Using Codex CLI for the agentic workflow
+
+You can use Codex as a lightweight lab-technician layer for this repository. The expected workflow and constraints are documented in `AGENTS.md`, so start Codex from a shell where your intended Python environment is already activated, then give it a single natural-language prompt with:
+
+- dataset path
+- experiment name
+- whether masks are present
+- preprocessing instructions
+
+Codex should then follow the repository workflow: inspect the dataset, choose the correct canonical template, create/adapt experiment files, run training, run HMC, and generate the report.
+
+Reusable prompt template:
+
+```text
+Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/<dataset_folder>/<dataset_file>.h5', experiment name '<experiment_name>', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
+```
+
+Concrete example:
+
+```text
+Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/lokta_volterra/lotka_volterra_no_masks.h5', experiment name 'lokta_volterra', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
+```
+
+Expected outputs include a Hydra run directory under `outputs/<experiment_name>/...`, `train_summary.json`, `hmc_results/hmc_summary.json`, and a generated markdown report at `hmc_results/report.md`.
+
+You can compare reports across runs to inspect how configuration changes (for example changing `train.bnre_gamma`) affect recorded metrics and diagnostics.
