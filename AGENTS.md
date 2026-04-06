@@ -174,9 +174,11 @@ After training and HMC succeed, generate the markdown report with the shared API
 - `generate_report(run_dir, template_path, ...)` — fill the template for a specific Hydra run directory
 - `generate_report_for_experiment(exp_name, template_path, run_dir=None, ...)` — pick the latest run under `outputs/<exp_name>/` when `run_dir` is omitted
 
-Do **not** reimplement placeholder replacement, JSON loading, or corner-plot stitching in experiment scripts.
+You may also use the CLI entrypoint:
 
-If an experiment needs a CLI entrypoint, add a **thin wrapper only** (e.g. `experiments/<name>/report.py` calling `generate_report_for_experiment` with that experiment’s `exp_name` and `templates/report_template.md`).
+- `python -m jax_bnre_hmc.report --run-dir outputs/{experiment_name}/{timestamp}`
+
+Do **not** create per-experiment `report.py` wrappers under `experiments/`, and do **not** reimplement placeholder replacement, JSON loading, or corner-plot stitching in experiment scripts.
 
 Template:
 - `templates/report_template.md`
@@ -249,7 +251,7 @@ If not:
 
 ### Step 7 — Generate report
 - call `jax_bnre_hmc.report.generate_report_for_experiment` (or `generate_report` with an explicit `run_dir`) so `hmc_results/report.md` is written from `templates/report_template.md`
-- do not duplicate report logic in experiment code
+- do not duplicate report logic in experiment code or add `experiments/<exp>/report.py` modules
 
 ---
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -42,14 +43,7 @@ def generate_report(
     output_path: Path | None = None,
     num_corner_plots: int = 3,
 ) -> Path:
-    """Build ``report.md`` from the template and JSON/YAML under ``run_dir``.
-
-    Expects ``run_dir`` to be a Hydra run folder (e.g. ``outputs/<exp>/<timestamp>/``)
-    with ``train_summary.json``, ``train.yaml``, and ``run_dir/hmc_results/hmc_summary.json``.
-
-    Returns:
-        Path to the written report (default: ``run_dir/hmc_results/report.md``).
-    """
+    """Build ``report.md`` from the template and JSON/YAML under ``run_dir``."""
     run_dir = Path(run_dir).resolve()
     template_path = Path(template_path)
     hmc_dir = run_dir / "hmc_results"
@@ -133,11 +127,7 @@ def generate_report_for_experiment(
     run_dir: Path | None = None,
     num_corner_plots: int = 3,
 ) -> Path:
-    """Like :func:`generate_report`, but resolves ``run_dir`` from ``outputs/<exp_name>/``.
-
-    If ``run_dir`` is omitted, uses the lexicographically last subdirectory of
-    ``outputs/<exp_name>/`` (same as the previous lokta_volterra script).
-    """
+    """Resolve a run directory under ``outputs/<exp_name>/`` and generate a report."""
     if run_dir is None:
         base = Path("outputs") / exp_name
         if not base.is_dir():
@@ -155,3 +145,47 @@ def generate_report_for_experiment(
         output_path=None,
         num_corner_plots=num_corner_plots,
     )
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate BNRE+HMC markdown report.")
+    parser.add_argument(
+        "--run-dir",
+        type=str,
+        required=True,
+        help="Hydra run directory (e.g. outputs/<exp_name>/<timestamp>).",
+    )
+    parser.add_argument(
+        "--template-path",
+        type=str,
+        default="templates/report_template.md",
+        help="Path to the markdown report template.",
+    )
+    parser.add_argument(
+        "--output-path",
+        type=str,
+        default=None,
+        help="Optional explicit output path for the report; defaults to run_dir/hmc_results/report.md.",
+    )
+    parser.add_argument(
+        "--num-corner-plots",
+        type=int,
+        default=3,
+        help="Maximum number of corner plots to include (0 disables the section).",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = _parse_args()
+    out = generate_report(
+        run_dir=Path(args.run_dir),
+        template_path=Path(args.template_path),
+        output_path=Path(args.output_path) if args.output_path is not None else None,
+        num_corner_plots=int(args.num_corner_plots),
+    )
+    print(out)
+
+
+if __name__ == "__main__":
+    main()
