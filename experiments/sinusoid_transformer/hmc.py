@@ -120,6 +120,7 @@ def main(cfg: DictConfig):
             raise ValueError(f"n_observations ({n_obs}) must be <= test set size ({n_test}).")
         indices = rng.choice(n_test, size=n_obs, replace=False)
         theta_true = theta_test_scaled[indices]
+        theta_true_unscaled = theta_test_raw[indices]
         x_obs = x_test_tokens[indices]
 
         prior = BoxPrior(
@@ -159,6 +160,15 @@ def main(cfg: DictConfig):
 
         posterior_samples = jnp.stack(posteriors_list, axis=1)
         posterior_samples = jnp.transpose(posterior_samples, (1, 2, 0))
+        posterior_samples_unscaled = np.stack(
+            [
+                theta_scaler.inverse_transform(
+                    np.asarray(posterior_samples[i].T, dtype=np.float64)
+                )
+                for i in range(n_obs)
+            ],
+            axis=0,
+        )
         print("All done.")
         print("Posterior samples shape:", posterior_samples.shape)
 
@@ -172,8 +182,8 @@ def main(cfg: DictConfig):
         corner_labels = theta_names
 
         for idx in range(n_plots):
-            samples = np.array(posterior_samples[idx].T)
-            true_params = np.array(theta_true[idx])
+            samples = np.asarray(posterior_samples_unscaled[idx], dtype=np.float64)
+            true_params = np.asarray(theta_true_unscaled[idx], dtype=np.float64)
             figure = corner.corner(
                 samples,
                 labels=corner_labels,
@@ -189,6 +199,7 @@ def main(cfg: DictConfig):
             print(f"Saved corner plot for observation {idx} as {outname}")
 
         posterior_samples_tarp = jnp.transpose(posterior_samples, (2, 0, 1))
+        posterior_samples_unscaled_snd = np.transpose(posterior_samples_unscaled, (1, 0, 2))
         key = jax.random.PRNGKey(42)
         key, subkey = jax.random.split(key)
         references = jax.random.uniform(
@@ -225,8 +236,8 @@ def main(cfg: DictConfig):
         plt.close()
 
         with h5py.File(output_dir / "posterior_samples.h5", "w") as f:
-            f.create_dataset("posterior_samples", data=np.array(posterior_samples_tarp))
-            f.create_dataset("theta_true", data=np.array(theta_true))
+            f.create_dataset("posterior_samples", data=posterior_samples_unscaled_snd)
+            f.create_dataset("theta_true", data=np.asarray(theta_true_unscaled, dtype=np.float64))
             f.create_dataset("x_obs", data=np.array(x_obs))
         print(f"Saved posterior samples to {output_dir / 'posterior_samples.h5'}")
 
