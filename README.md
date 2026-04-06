@@ -5,9 +5,9 @@ This repository implements **Balanced Neural Ratio Estimation (BNRE)** in **JAX/
 
 At a high level:
 
-- **NRE/BNRE**: Train a classifier \( d_\phi(\theta, x) \) that distinguishes joint samples \((\theta, x)\) from marginally paired \((\theta, x')\). From its logits you obtain an estimate of the likelihood(-ratio).
+- **NRE/BNRE**: Train a classifier  $d_\phi(\theta, x)$ that distinguishes joint samples $(\theta, x)$ from marginally paired $(\theta, x')$. From its logits you obtain an estimate of the likelihood(-ratio).
 - **BNRE**: Adds a **balance penalty** encouraging the classifier’s average output on joint vs marginal samples to be equal, which stabilizes training and improves downstream inference.
-- **HMC**: Uses the learned ratio estimator as a surrogate likelihood to run MCMC over parameters \(\theta\), giving calibrated posterior samples.
+- **HMC**: Uses the learned ratio estimator as a surrogate likelihood to run MCMC over parameters $\theta$, giving calibrated posterior samples.
 
 The code is written to be:
 
@@ -47,17 +47,17 @@ The code is written to be:
 - **`loss.py`**  
   - `nre_loss_from_logits`: Label-free NRE objective.  
   - `nre_loss_bce_style_from_logits`: BCE-with-logits form of NRE for SBI-style comparison.  
-  - `bnre_balance_from_logits`: Computes BNRE balance term \(B\) and penalty \((B-1)^2\).
+  - `bnre_balance_from_logits`: Computes BNRE balance term $B$ and penalty $(B-1)^2$.
 
 - **`data.py`**  
-  - `Batch`: Simple container for batched \((\theta, x)\).  
+  - `Batch`: Simple container for batched $(\theta, x)$.  
   - `_derangement`: Samples a permutation with no fixed points (to avoid mislabeled negatives).  
   - `make_joint_and_marginal`: Builds joint and marginal batches from paired samples.  
   - `make_batches`: Deterministic shuffling + mini-batch iterator (drops remainder).
 
 - **`model.py`**  
-  - `RatioEstimatorMLP`: MLP mapping \((\theta, x)\) to a scalar logit.  
-  - `RatioEstimatorResNet`: ResNet-style MLP over concatenated \((\theta, x)\).  
+  - `RatioEstimatorMLP`: MLP mapping $(\theta, x)$ to a scalar logit.  
+  - `RatioEstimatorResNet`: ResNet-style MLP over concatenated $(\theta, x)$.  
   - `ResidualBlock`, `get_activation`: Supporting components.
 
 - **`checkpointing.py`**  
@@ -157,10 +157,10 @@ File-based experiments load pre-split data with `jax_bnre_hmc.datasets.load_hdf5
 
 **Shape rules:**
 
-- Each split: `theta_*` and `x_*` must have the **same number of rows** (paired \((\theta, x)\) examples).
+- Each split: `theta_*` and `x_*` must have the **same number of rows** (paired $(\theta, x)$ examples).
 - Across splits: all `theta_*` must share the same **second dimension** (parameter dim); all `x_*` must share the same **second dimension** (feature dim).
 
-**Optional masks (for \(x\) only, e.g. missing grid points):**
+**Optional masks (for $x$ only, e.g. missing grid points):**
 
 | Dataset       | Meaning |
 |---------------|---------|
@@ -168,7 +168,7 @@ File-based experiments load pre-split data with `jax_bnre_hmc.datasets.load_hdf5
 | `x_val_mask`   | Mask for `x_val` |
 | `x_test_mask`  | Mask for `x_test` |
 
-If **any** mask dataset is present, **all three** must be present. Each mask must be **2D**, numeric, finite, and **exactly the same shape** as the corresponding `x_*` array. Typical convention: `1` = valid / observed, `0` = missing (downstream scripts may treat values \(> 0.5\) as valid).
+If **any** mask dataset is present, **all three** must be present. Each mask must be **2D**, numeric, finite, and **exactly the same shape** as the corresponding `x_*` array. Typical convention: `1` = valid / observed, `0` = missing (downstream scripts may treat values $> 0.5$ as valid).
 
 **Optional metadata (file-level HDF5 attributes):**
 
@@ -323,7 +323,7 @@ The typical inference pattern is:
 - Load the **best** parameters with `load_best_params`.  
 - Reconstruct the same model architecture as during training.  
 - Define a surrogate log-likelihood (or likelihood-ratio) in terms of the model’s logits.  
-- Run HMC / NUTS in NumPyro to obtain posterior samples over \(\theta\).
+- Run HMC / NUTS in NumPyro to obtain posterior samples over $\theta$.
 
 For concrete code, see **`experiments/sinusoid/hmc.py`** and **`experiments/sinusoid_transformer/hmc.py`** (canonical templates for moving from BNRE training to HMC with the learned ratio estimator).
 
@@ -344,8 +344,8 @@ Written at the **Hydra run root** (e.g. `outputs/<exp_name>/<timestamp>/`) when 
 | `status` | Always `"ok"` for a completed run that wrote this schema. |
 | `best_val_loss` | Validation loss at the best checkpoint (matches `checkpoints/best/best_meta.json`). |
 | `best_epoch` | 1-based epoch index when that best checkpoint was saved. |
-| `dims.theta_dim` | Parameter dimension \(D\) (columns of `theta_train`). |
-| `dims.x_dim` | Observation “width”: for flat \(x\) of shape `(N, D)`, this is `D`; for token inputs `(N, T, F)` (e.g. transformer), this is the sequence length `T`. |
+| `dims.theta_dim` | Parameter dimension $D$ (columns of `theta_train`). |
+| `dims.x_dim` | Observation “width”: for flat $x$ of shape `(N, D)`, this is `D`; for token inputs `(N, T, F)` (e.g. transformer), this is the sequence length `T`. |
 | `model_type` | Coarse architecture label from config (e.g. `mlp`, `transformer`). |
 
 **Error (`status: "error"`):**
@@ -399,10 +399,10 @@ The second canonical template, **`sinusoid_transformer`**, uses a ratio estimato
 
 Representation:
 
-- Observation values: \(y = (y_1, \dots, y_T)\)
-- Mask: \(m = (m_1, \dots, m_T)\), where \(m_i = 1\) if \(y_i\) is valid and \(0\) otherwise
+- Observation values: $y = (y_1, \dots, y_T)$
+- Mask: $m = (m_1, \dots, m_T)$, where $m_i = 1$ if $y_i$ is valid and $0$ otherwise
 
-The model consumes a token sequence of shape `(T, 2)` with tokens \([y_i, m_i]\). In the training script, masked entries are:
+The model consumes a token sequence of shape `(T, 2)` with tokens $[y_i, m_i]$. In the training script, masked entries are:
 
 - filled only for scaling (using per-timepoint mean over valid entries),
 - then **zeroed** in the actual model input, while the mask channel indicates validity.
