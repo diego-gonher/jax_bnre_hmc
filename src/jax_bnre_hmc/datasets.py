@@ -280,12 +280,12 @@ def load_hdf5_dataset(path: str | Path, validate: bool = True) -> LoadedDataset:
             attrs[key] = value
             if key == "theta_names":
                 try:
-                    theta_names = tuple(str(v) for v in value)
+                    theta_names = str(value)
                 except Exception:
                     theta_names = None
             elif key == "x_names":
                 try:
-                    x_names = tuple(str(v) for v in value)
+                    x_names = str(value)
                 except Exception:
                     x_names = None
             elif key == "description":
