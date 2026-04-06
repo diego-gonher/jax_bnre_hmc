@@ -17,6 +17,19 @@ The code is written to be:
 
 ---
 
+## Table of Contents
+
+- [Repository Structure](#repository-structure)
+- [Run summary JSON files](#run-summary-json-files)
+- [HDF5 training dataset contract](#hdf5-training-dataset-contract)
+- [Installation](#installation)
+- [Using Codex CLI for the agentic workflow](#using-codex-cli-for-the-agentic-workflow)
+- [Example: Sinusoid (canonical template)](#example-sinusoid-canonical-template)
+- [Using the Trained Ratio Estimator in HMC](#using-the-trained-ratio-estimator-in-hmc)
+- [Transformer ratio estimator for missing 1D data (masked observations)](#transformer-ratio-estimator-for-missing-1d-data-masked-observations)
+
+---
+
 ## Repository Structure
 
 ### Core library (`src/jax_bnre_hmc`)
@@ -227,6 +240,35 @@ pip install -e .
 ```
 
 Make sure you have a compatible JAX / JAXLIB / NumPyro stack; see `environment.yml` for one working environment.
+
+---
+
+## Using Codex CLI for the agentic workflow
+
+You can use Codex as a lightweight lab-technician layer for this repository. The expected workflow and constraints are documented in `AGENTS.md`, so start Codex from a shell where your intended Python environment is already activated, then give it a single natural-language prompt with:
+
+- dataset path
+- experiment name
+- whether masks are present
+- preprocessing instructions
+
+Codex should then follow the repository workflow: inspect the dataset, choose the correct canonical template, create/adapt experiment files, run training, run HMC, and generate the report.
+
+Reusable prompt template:
+
+```text
+Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/<dataset_folder>/<dataset_file>.h5', experiment name '<experiment_name>', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
+```
+
+Concrete example:
+
+```text
+Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/lokta_volterra/lotka_volterra_no_masks.h5', experiment name 'lokta_volterra', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
+```
+
+Expected outputs include a Hydra run directory under `outputs/<experiment_name>/...`, `train_summary.json`, `hmc_results/hmc_summary.json`, and a generated markdown report at `hmc_results/report.md`.
+
+You can compare reports across runs to inspect how configuration changes (for example changing `train.bnre_gamma`) affect recorded metrics and diagnostics.
 
 ---
 
