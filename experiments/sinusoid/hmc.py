@@ -142,12 +142,10 @@ def main(cfg: DictConfig):
             theta_names = [j.replace(',', '') for j in loaded.metadata.theta_names.split(' ')]
 
         n_plots = min(int(cfg.n_plots), n_obs)
-        rng = np.random.default_rng(1234)
-        selected_indices = rng.choice(n_obs, size=n_plots, replace=False)
 
         corner_labels = theta_names
 
-        for idx in selected_indices:
+        for idx in range(n_plots):
             samples = np.array(posterior_samples[idx].T)
             true_params = np.array(theta_true[idx])
             figure = corner.corner(
