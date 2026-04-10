@@ -8,6 +8,7 @@ from typing import Any, List, Optional, Sequence, Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
+from scipy.stats import binom
 
 from jax_bnre_hmc.plot_style import apply_plot_style
 
@@ -121,6 +122,11 @@ def plot_sbc_rank_histograms(
     ks_pvals: Optional[np.ndarray] = None,
     bins: Optional[int] = None,
     figsize: Optional[Tuple[float, float]] = None,
+    *,
+    show_uniform_region: bool = True,
+    uniform_region_alpha: float = 0.25,
+    uniform_region_color: str = "gray",
+    uniform_region_ci_level: float = 0.95,
     output_path: Optional[Union[str, Path]] = None,
 ) -> Tuple[Figure, np.ndarray]:
     """Histogram of SBC ranks per dimension (marginals), with uniform reference line.
@@ -130,8 +136,14 @@ def plot_sbc_rank_histograms(
         num_posterior_samples: ``S`` (same as in ``run_sbc_from_samples``); x-axis is ``[0, S]``.
         labels: Optional length-``D`` names for subplot titles.
         ks_pvals: Optional length-``D`` p-values shown in titles.
-        bins: Number of histogram bins; default ``min(30, S + 1)``.
+        bins: Number of histogram bins. If ``None``, uses ``min(max(1, N // 10), S + 1)``
+            (same spirit as ``run_tarp_jax(..., num_bins=None)``: ~one bin per 10 simulations,
+            capped by the rank lattice width ``S + 1``).
         figsize: Figure size; default scales with ``D``.
+        show_uniform_region: If True, shade a binomial interval for counts per bin under uniformity.
+        uniform_region_alpha: Alpha for the shaded band.
+        uniform_region_color: Face color for the shaded band.
+        uniform_region_ci_level: Central coverage for ``binom.ppf`` tails (e.g. 0.95).
         output_path: If set, ``savefig`` to this path.
 
     Returns:
@@ -146,9 +158,18 @@ def plot_sbc_rank_histograms(
     if s <= 0:
         raise ValueError("num_posterior_samples must be positive.")
 
-    n_bins = int(bins) if bins is not None else min(30, s + 1)
+    if bins is not None:
+        n_bins = int(bins)
+    else:
+        n_bins = min(max(1, n // 10), s + 1)
     n_bins = max(1, n_bins)
     expected_count = n / n_bins
+
+    p_bin = 1.0 / n_bins
+    alpha_tail = (1.0 - uniform_region_ci_level) / 2.0
+    low_count = float(binom.ppf(alpha_tail, n, p_bin))
+    high_count = float(binom.ppf(1.0 - alpha_tail, n, p_bin))
+    bin_edges = np.linspace(0.0, float(s), n_bins + 1)
 
     if figsize is None:
         figsize = (max(3.2 * d, 3.5), 3.2)
@@ -158,6 +179,17 @@ def plot_sbc_rank_histograms(
 
     for j in range(d):
         ax = axes[j]
+        if show_uniform_region:
+            for bi in range(n_bins):
+                ax.fill_between(
+                    [bin_edges[bi], bin_edges[bi + 1]],
+                    low_count,
+                    high_count,
+                    facecolor=uniform_region_color,
+                    alpha=uniform_region_alpha,
+                    zorder=0,
+                    linewidth=0,
+                )
         ax.hist(
             ranks[:, j],
             bins=n_bins,
@@ -165,8 +197,9 @@ def plot_sbc_rank_histograms(
             color="steelblue",
             edgecolor="white",
             linewidth=0.5,
+            zorder=2,
         )
-        ax.axhline(expected_count, color="k", linestyle="--", linewidth=1.0, alpha=0.7)
+        ax.axhline(expected_count, color="k", linestyle="--", linewidth=1.0, alpha=0.7, zorder=3)
         ax.set_xlim(0.0, float(s))
         ax.set_xlabel("rank")
         if j == 0:

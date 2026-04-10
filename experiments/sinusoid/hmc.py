@@ -195,7 +195,7 @@ def main(cfg: DictConfig):
         alpha_np = np.asarray(alpha_grid)
         ecp_np = np.asarray(ecp)
         tarp_mae = float(np.mean(np.abs(ecp_np - alpha_np)))
-        tarp_iae = float(np.trapz(np.abs(ecp_np - alpha_np), alpha_np))
+        tarp_iae = float(np.trapezoid(np.abs(ecp_np - alpha_np), alpha_np))
         plot_tarp_ecp_curve(output_dir, alpha_grid, ecp)
 
         with h5py.File(output_dir / "posterior_samples.h5", "w") as f:
