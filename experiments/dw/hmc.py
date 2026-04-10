@@ -19,7 +19,6 @@ from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.diagnostics import (
     check_sbc,
     l2_distance,
-    plot_sbc_rank_histograms,
     run_sbc_from_samples,
     run_tarp_jax,
 )
@@ -33,6 +32,7 @@ from jax_bnre_hmc.hmc import (
     z_to_theta,
 )
 from jax_bnre_hmc.model import RatioEstimatorMLP
+from jax_bnre_hmc.plotting import plot_sbc_rank_histograms, plot_tarp_ecp_curve
 from jax_bnre_hmc.plot_style import apply_plot_style
 
 
@@ -192,19 +192,7 @@ def main(cfg: DictConfig):
         ecp_np = np.asarray(ecp)
         tarp_mae = float(np.mean(np.abs(ecp_np - alpha_np)))
         tarp_iae = float(np.trapz(np.abs(ecp_np - alpha_np), alpha_np))
-        plt.figure(figsize=(5, 5))
-        plt.plot(alpha_grid, ecp, marker="o")
-        plt.plot([0, 1], [0, 1], "k--", label="Ideal")
-        plt.xlabel("Credibility Level (α)")
-        plt.ylabel("Empirical Coverage Probability (ECP)")
-        plt.title("TARP: Empirical Coverage Probability Curve")
-        plt.axis("square")
-        plt.xlim(0, 1)
-        plt.ylim(0, 1)
-        plt.grid()
-        plt.legend()
-        plt.savefig(output_dir / "tarp_ecp_curve.png")
-        plt.close()
+        plot_tarp_ecp_curve(output_dir, alpha_grid, ecp)
 
         with h5py.File(output_dir / "posterior_samples.h5", "w") as f:
             f.create_dataset("posterior_samples", data=posterior_samples_unscaled_snd)

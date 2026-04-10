@@ -19,7 +19,6 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import numpy as np
-import matplotlib.pyplot as plt
 import h5py
 
 from jax_bnre_hmc.checkpointing import load_best_params
@@ -27,6 +26,7 @@ from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorMLP
+from jax_bnre_hmc.plotting import save_training_diagnostic_plots
 from jax_bnre_hmc.plot_style import apply_plot_style
 from jax_bnre_hmc.train import TrainConfig, train
 
@@ -180,26 +180,15 @@ def main(cfg: DictConfig):
         f"training_time_per_epoch_seconds: {float(time_per_epoch)}\n"
     )
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_losses, label="train_loss")
-    plt.plot(val_losses, label="val_loss")
-    plt.legend()
-    plt.savefig(run_dir / "losses.png", dpi=150, bbox_inches="tight")
-    plt.close()
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_bce_losses, label="train_bce_style_loss")
-    plt.plot(val_bce_losses, label="val_bce_style_loss")
-    plt.legend()
-    plt.savefig(run_dir / "bce_style_losses.png", dpi=150, bbox_inches="tight")
-    plt.close()
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(pj, label="joint")
-    plt.plot(pm, label="marginal")
-    plt.legend()
-    plt.savefig(run_dir / "sigmoid.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    save_training_diagnostic_plots(
+        run_dir,
+        train_losses,
+        val_losses,
+        train_bce_losses,
+        val_bce_losses,
+        pj,
+        pm,
+    )
 
 
 if __name__ == "__main__":

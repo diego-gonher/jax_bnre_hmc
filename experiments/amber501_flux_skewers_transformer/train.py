@@ -15,7 +15,6 @@ from pathlib import Path
 import hydra
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
@@ -26,6 +25,7 @@ from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorTransformer
+from jax_bnre_hmc.plotting import save_training_diagnostic_plots
 from jax_bnre_hmc.plot_style import apply_plot_style
 from jax_bnre_hmc.train import TrainConfig, train
 
@@ -248,28 +248,18 @@ def main(cfg: DictConfig):
     # -----------------------------
     # Plots
     # -----------------------------
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_losses, label="train_loss")
-    plt.plot(val_losses, label="val_loss")
-    plt.legend()
-    plt.savefig(run_dir / "losses.png", dpi=150, bbox_inches="tight")
-    plt.close()
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_bce_losses, label="train_bce_style_loss")
-    plt.plot(val_bce_losses, label="val_bce_style_loss")
-    plt.legend()
-    plt.savefig(run_dir / "bce_style_losses.png", dpi=150, bbox_inches="tight")
-    plt.close()
-
-    # Plot only a subset of sigmoid outputs, otherwise this can be visually messy
     n_plot = min(500, len(pj))
-    plt.figure(figsize=(10, 5))
-    plt.plot(np.array(pj[:n_plot]), label="joint")
-    plt.plot(np.array(pm[:n_plot]), label="marginal")
-    plt.legend()
-    plt.savefig(run_dir / "sigmoid_subset.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    save_training_diagnostic_plots(
+        run_dir,
+        train_losses,
+        val_losses,
+        train_bce_losses,
+        val_bce_losses,
+        pj,
+        pm,
+        sigmoid_filename="sigmoid_subset.png",
+        n_plot=n_plot,
+    )
 
     # -----------------------------
     # Load best params and verify validation loss

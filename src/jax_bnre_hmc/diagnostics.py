@@ -6,11 +6,19 @@ from typing import Callable, List, Optional, Tuple, Union
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 
-from jax_bnre_hmc.plot_style import apply_plot_style
+from jax_bnre_hmc.plotting import plot_sbc_rank_histograms
+
+__all__ = [
+    "l2_distance",
+    "run_tarp_jax",
+    "run_sbc_from_samples",
+    "check_uniformity_frequentist",
+    "check_sbc",
+    "plot_sbc_rank_histograms",
+]
 
 
 def l2_distance(x: jnp.ndarray, y: jnp.ndarray, axis: int = -1) -> jnp.ndarray:
@@ -278,79 +286,6 @@ def check_sbc(
     return {
         "ks_pvals": check_uniformity_frequentist(ranks, num_posterior_samples),
     }
-
-
-def plot_sbc_rank_histograms(
-    ranks: np.ndarray,
-    num_posterior_samples: int,
-    labels: Optional[List[str]] = None,
-    ks_pvals: Optional[np.ndarray] = None,
-    bins: Optional[int] = None,
-    figsize: Optional[Tuple[float, float]] = None,
-    output_path: Optional[Union[str, Path]] = None,
-) -> Tuple[plt.Figure, np.ndarray]:
-    """Histogram of SBC ranks per dimension (marginals), with uniform reference line.
-
-    Args:
-        ranks: Shape ``(N, D)`` (one column per marginal / reduction).
-        num_posterior_samples: ``S`` (same as in ``run_sbc_from_samples``); x-axis is ``[0, S]``.
-        labels: Optional length-``D`` names for subplot titles.
-        ks_pvals: Optional length-``D`` p-values shown in titles.
-        bins: Number of histogram bins; default ``min(30, S + 1)``.
-        figsize: Figure size; default scales with ``D``.
-        output_path: If set, ``savefig`` to this path.
-
-    Returns:
-        ``(fig, axes)`` with ``axes`` shape ``(D,)`` (flattened row of subplots).
-    """
-    apply_plot_style()
-    ranks = np.asarray(ranks, dtype=np.float64)
-    if ranks.ndim != 2:
-        raise ValueError(f"ranks must have shape (N, D), got {ranks.shape}")
-    n, d = ranks.shape
-    s = int(num_posterior_samples)
-    if s <= 0:
-        raise ValueError("num_posterior_samples must be positive.")
-
-    n_bins = int(bins) if bins is not None else min(30, s + 1)
-    n_bins = max(1, n_bins)
-    expected_count = n / n_bins
-
-    if figsize is None:
-        figsize = (max(3.2 * d, 3.5), 3.2)
-
-    fig, axes_2d = plt.subplots(1, d, figsize=figsize, squeeze=False, sharey=True)
-    axes = axes_2d.ravel()
-
-    for j in range(d):
-        ax = axes[j]
-        ax.hist(
-            ranks[:, j],
-            bins=n_bins,
-            range=(0.0, float(s)),
-            color="steelblue",
-            edgecolor="white",
-            linewidth=0.5,
-        )
-        ax.axhline(expected_count, color="k", linestyle="--", linewidth=1.0, alpha=0.7)
-        ax.set_xlim(0.0, float(s))
-        ax.set_xlabel("rank")
-        if j == 0:
-            ax.set_ylabel("count")
-
-        title_parts: List[str] = []
-        if labels is not None and j < len(labels):
-            title_parts.append(str(labels[j]))
-        else:
-            title_parts.append(f"dim {j}")
-        if ks_pvals is not None and j < len(ks_pvals):
-            title_parts.append(f"KS p={float(ks_pvals[j]):.3g}")
-        ax.set_title("\n".join(title_parts), fontsize=10)
-
-    fig.tight_layout()
-    if output_path is not None:
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    return fig, axes
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_confi
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.hmc import ConvexHullPrior, make_log_ratio_fn, make_potential_fn, run_nuts, z_to_theta, sample_uniform_in_convex_hull
 from jax_bnre_hmc.model import RatioEstimatorMLP
+from jax_bnre_hmc.plotting import plot_tarp_ecp_curve
 from jax_bnre_hmc.plot_style import apply_plot_style
 from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 
@@ -156,19 +157,7 @@ def main(cfg: DictConfig):
         z_score_theta=True,
         eps=1e-10,
     )
-    plt.figure(figsize=(5, 5))
-    plt.plot(alpha_grid, ecp, marker="o")
-    plt.plot([0, 1], [0, 1], "k--", label="Ideal")
-    plt.xlabel("Credibility Level (α)")
-    plt.ylabel("Empirical Coverage Probability (ECP)")
-    plt.title("TARP: Empirical Coverage Probability Curve")
-    plt.axis("square")
-    plt.xlim(0, 1)
-    plt.ylim(0, 1)
-    plt.grid()
-    plt.legend()
-    plt.savefig(output_dir / "tarp_ecp_curve.png")
-    plt.close()
+    plot_tarp_ecp_curve(output_dir, alpha_grid, ecp)
 
     with h5py.File(output_dir / "posterior_samples.h5", "w") as f:
         f.create_dataset("posterior_samples", data=np.array(posterior_samples))
