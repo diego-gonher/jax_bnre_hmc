@@ -62,13 +62,16 @@ def main(cfg: DictConfig):
         print(f" - theta_test shape:  {theta_test_raw.shape}")
         print(f" - x_test shape:      {x_test_raw.shape}")
 
+        # MinMax scalers on both theta and x (fit on train only), same pattern as sinusoid/train.py
         theta_scaler = MinMaxScaler(feature_range=(-1, 1))
         x_scaler = MinMaxScaler(feature_range=(-1, 1))
 
         theta_train = theta_scaler.fit_transform(theta_train_raw)
         x_train = x_scaler.fit_transform(x_train_raw)
+
         theta_val = theta_scaler.transform(theta_val_raw)
         x_val = x_scaler.transform(x_val_raw)
+
         theta_test = theta_scaler.transform(theta_test_raw)
         x_test = x_scaler.transform(x_test_raw)
 

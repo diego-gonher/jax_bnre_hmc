@@ -1,5 +1,5 @@
 # Path to the training run directory (contains train.yaml and checkpoints/)
-run_dir: outputs/dw/2026-04-10_11-15-13
+run_dir: outputs/dw/2026-04-10_15-41-00
 
 # Where to write HMC outputs (null => run_dir/hmc_results). Hydra run dir is set to the same
 # so that job logs (e.g. hmc.log) end up next to corner plots, TARP, and posterior HDF5.

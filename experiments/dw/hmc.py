@@ -76,6 +76,7 @@ def main(cfg: DictConfig):
         theta_test_raw = splits.theta_test
         x_test_raw = splits.x_test
 
+        # Same scaling as train.py / sinusoid: MinMaxScaler(-1, 1) fit on train only, then transform test
         theta_scaler = MinMaxScaler(feature_range=(-1, 1))
         x_scaler = MinMaxScaler(feature_range=(-1, 1))
         theta_scaler.fit(theta_train_raw)
