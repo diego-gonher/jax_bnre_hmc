@@ -91,7 +91,7 @@ Typical training keys in the canonical configs:
 
 - **`data`**: `dataset_file` path to an HDF5 file following the contract below.  
 - **`model`**: Architecture (MLP hidden dims / activation / norm, or transformer hyperparameters).  
-- **`train`**: Learning rate, epochs, BNRE weight (`bnre_gamma`), batch size, gradient clipping, checkpointing, and early stopping (`stop_after_epochs`).
+- **`train`**: Learning rate, epochs, BNRE weight (`bnre_lambda`), batch size, gradient clipping, checkpointing, and early stopping (`stop_after_epochs`).
 
 ### Experiments (`experiments/`)
 
@@ -224,7 +224,7 @@ model:
 train:
   lr: 0.0005
   epochs: 5000
-  bnre_gamma: 100.0
+  bnre_lambda: 100.0
   batch_size: 128
   print_every: 10
   clip_max_norm: 5.00
@@ -235,7 +235,7 @@ train:
 
 Key knobs:
 
-- **`train.bnre_gamma`**: Set to `0.0` for standard NRE, or positive for BNRE.  
+- **`train.bnre_lambda`**: Set to `0.0` for standard NRE, or positive for BNRE.  
 - **`stop_after_epochs`**: Early stopping patience based on validation loss.  
 - **`save_every`**, **`checkpoint_dirname`**: Checkpointing frequency and location.  
 - **`data.dataset_file`**: HDF5 path (see the dataset contract below).
@@ -258,7 +258,7 @@ This will:
 You can override any config value from the command line via Hydra, e.g.:
 
 ```bash
-python experiments/sinusoid/train.py train.bnre_gamma=0.0 train.stop_after_epochs=null
+python experiments/sinusoid/train.py train.bnre_lambda=0.0 train.stop_after_epochs=null
 ```
 
 ---
@@ -454,5 +454,5 @@ Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets
 
 Expected outputs include a Hydra run directory under `outputs/<experiment_name>/...`, `train_summary.json`, `hmc_results/hmc_summary.json`, and a generated markdown report at `hmc_results/report.md`.
 
-You can compare reports across runs to inspect how configuration changes (for example changing `train.bnre_gamma`) affect recorded metrics and diagnostics.
+You can compare reports across runs to inspect how configuration changes (for example changing `train.bnre_lambda`) affect recorded metrics and diagnostics.
 

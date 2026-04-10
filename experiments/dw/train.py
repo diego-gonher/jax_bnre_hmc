@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["ABSL_LOGGING_THRESHOLD"] = "2"  # 0=INFO,1=WARNING,2=ERROR,3=FATAL
+os.environ["ABSL_LOGGING_THRESHOLD"] = "2"
 
 from absl import logging as absl_logging
 absl_logging.set_verbosity(absl_logging.ERROR)
@@ -23,22 +23,20 @@ from sklearn.preprocessing import MinMaxScaler
 from jax_bnre_hmc.checkpointing import load_best_params
 from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.datasets import load_hdf5_dataset
-from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
+from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits
 from jax_bnre_hmc.model import RatioEstimatorMLP
 from jax_bnre_hmc.train import TrainConfig, train, write_train_summary
 
 
-@hydra.main(config_path="../../configs/sinusoid", config_name="train", version_base="1.3")
+@hydra.main(config_path="../../configs/dw", config_name="train", version_base="1.3")
 def main(cfg: DictConfig):
-    # Set the seed
     key = jax.random.PRNGKey(int(cfg.seed))
 
     try:
-        # Load the dataset (pre-split) and preprocess it
         dataset_file = cfg.data.get("dataset_file")
         if dataset_file is None:
             raise ValueError(
-                "data.dataset_file must be set for sinusoid experiment "
+                "data.dataset_file must be set for dw experiment "
                 "(path to HDF5 with 'theta_train', 'x_train', 'theta_val', 'x_val', 'theta_test', 'x_test')"
             )
         dataset_file = str(dataset_file)
@@ -62,16 +60,13 @@ def main(cfg: DictConfig):
         print(f" - theta_test shape:  {theta_test_raw.shape}")
         print(f" - x_test shape:      {x_test_raw.shape}")
 
-        # use min max scalers on both (fit on train only), symmetric around 0
         theta_scaler = MinMaxScaler(feature_range=(-1, 1))
         x_scaler = MinMaxScaler(feature_range=(-1, 1))
 
         theta_train = theta_scaler.fit_transform(theta_train_raw)
         x_train = x_scaler.fit_transform(x_train_raw)
-
         theta_val = theta_scaler.transform(theta_val_raw)
         x_val = x_scaler.transform(x_val_raw)
-
         theta_test = theta_scaler.transform(theta_test_raw)
         x_test = x_scaler.transform(x_test_raw)
 
@@ -91,7 +86,7 @@ def main(cfg: DictConfig):
             stop_after_epochs=cfg.train.stop_after_epochs,
             model_type="mlp",
         )
-        print('\nTraining configuration created\nStarting training loop:')
+        print("\nTraining configuration created\nStarting training loop:")
 
         model = RatioEstimatorMLP(
             hidden_dims=tuple(cfg.model.hidden_dims),
@@ -118,21 +113,15 @@ def main(cfg: DictConfig):
     total_train_time = time.time() - start_time
     state, train_losses, train_bce_losses, val_losses, val_bce_losses = train_output
 
-    # Output directory
     run_dir = Path(HydraConfig.get().run.dir).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save config in output directory
     (run_dir / "train.yaml").write_text(OmegaConf.to_yaml(cfg))
 
-    # Basic sanity prints
     print("done. final train loss:", float(train_losses[-1]))
     print("done. final train bce :", float(train_bce_losses[-1]))
     print("done. final val loss:", float(val_losses[-1]))
     print("done. final val bce :", float(val_bce_losses[-1]))
 
-    # Evaluate mean logit on joint vs marginal for a quick sanity check
-    # (higher on joint is a good sign)
     key2 = jax.random.PRNGKey(int(cfg.seed) + 1)
     theta_all = jnp.concatenate(
         [
@@ -161,7 +150,6 @@ def main(cfg: DictConfig):
     print("mean(sigmoid) joint   :", float(jnp.mean(pj)))
     print("mean(sigmoid) marginal:", float(jnp.mean(pm)))
 
-    # Save the metrics in a txt file
     epochs_run = len(train_losses)
     time_per_epoch = total_train_time / max(epochs_run, 1)
     (run_dir / "metrics.txt").write_text(
@@ -198,36 +186,31 @@ def main(cfg: DictConfig):
     plt.savefig(run_dir / "sigmoid.png", dpi=150, bbox_inches="tight")
     plt.close()
 
-    # Load best params and verify validation loss
     best_dir = run_dir / cfg.train.checkpoint_dirname / "best"
     best_meta_path = run_dir / cfg.train.checkpoint_dirname / "best_meta.json"
-    
+
     if best_dir.exists() and best_meta_path.exists():
-        # Load best params
         best_params = load_best_params(best_dir)
-        
-        # Read expected best validation loss from metadata
         best_meta = json.loads(best_meta_path.read_text())
         expected_best_val_loss = best_meta["val_loss"]
-        
-        # Recompute validation loss using best params
-        key_val = jax.random.PRNGKey(int(cfg.seed) + 117)  # Use different key for verification
+
+        key_val = jax.random.PRNGKey(int(cfg.seed) + 117)
         joint_val, marginal_val = make_joint_and_marginal(key_val, theta_val, x_val)
         logits_joint_val = state.apply_fn(best_params, joint_val.theta, joint_val.x)
         logits_marg_val = state.apply_fn(best_params, marginal_val.theta, marginal_val.x)
         recomputed_val_loss = float(
             nre_loss_bce_style_from_logits(logits_joint_val, logits_marg_val)
         )
-        
+
         print(f"\nBest model verification:")
         print(f"  Expected best val_loss (from metadata): {expected_best_val_loss:.6f}")
         print(f"  Recomputed val_loss (from loaded params): {recomputed_val_loss:.6f}")
         print(f"  Difference: {abs(recomputed_val_loss - expected_best_val_loss):.6e}")
-        
+
         if abs(recomputed_val_loss - expected_best_val_loss) < 1e-5:
-            print("  ✓ Validation loss matches!")
+            print("  Validation loss matches.")
         else:
-            print("  ⚠ Warning: Validation loss mismatch, likely due to random seed mismatch for shuffling!")
+            print("  Warning: Validation loss mismatch, likely due to random seed mismatch for shuffling.")
 
 
 if __name__ == "__main__":

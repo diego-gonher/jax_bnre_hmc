@@ -24,7 +24,7 @@ model:
 train:
   lr: 0.0005
   epochs: 10000
-  bnre_gamma: 2500.0
+  bnre_lambda: 2500.0
   batch_size: 128
   print_every: 10
   clip_max_norm: 5.00 # null for no clipping
