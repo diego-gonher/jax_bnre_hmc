@@ -128,6 +128,8 @@ Inside you’ll find:
 
 ## Installation
 
+`pyproject.toml` is the canonical dependency source for this repository. The default editable install supports the documented end-to-end workflow (training + HMC via `experiments/*`).
+
 From the repository root:
 
 ```bash
@@ -136,7 +138,20 @@ source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -e .
 ```
 
-Make sure you have a compatible JAX / JAXLIB / NumPyro stack; see `environment.yml` for one working environment.
+Optional extras are for secondary tooling only (for example, local dev checks):
+
+```bash
+pip install -e ".[dev]"
+```
+
+Conda is optional convenience and installs the same default stack:
+
+```bash
+conda env create -f environment.yml
+conda activate jax_bnre
+```
+
+Make sure you have a compatible JAX / JAXLIB / NumPyro stack for your platform.
 
 ---
 
@@ -440,3 +455,4 @@ Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets
 Expected outputs include a Hydra run directory under `outputs/<experiment_name>/...`, `train_summary.json`, `hmc_results/hmc_summary.json`, and a generated markdown report at `hmc_results/report.md`.
 
 You can compare reports across runs to inspect how configuration changes (for example changing `train.bnre_gamma`) affect recorded metrics and diagnostics.
+

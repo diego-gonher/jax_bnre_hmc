@@ -7,7 +7,10 @@ name = "jax-bnre-hmc"
 version = "0.0.0"
 description = "Minimal JAX/Flax implementation of NRE/BNRE (v0)"
 requires-python = ">=3.10"
+readme = "README.md"
 dependencies = [
+  # Core: supports the documented end-to-end workflow (`experiments/*/train.py` and `experiments/*/hmc.py`).
+  "numpy",
   "jax",
   "jaxlib",
   "flax",
@@ -15,6 +18,20 @@ dependencies = [
   "hydra-core",
   "omegaconf",
   "scipy",
+  "numpyro",
+  "orbax-checkpoint",
+  "h5py",
+  "matplotlib",
+  "scikit-learn",
+  "corner",
+  "absl-py",
+]
+
+[project.optional-dependencies]
+# Local development tooling only (optional).
+dev = [
+  "pytest>=7.0",
+  "ruff>=0.1",
 ]
 
 [tool.setuptools]
@@ -22,4 +39,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
