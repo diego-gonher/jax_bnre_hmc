@@ -12,7 +12,7 @@ data:
   dataset_file: datasets/dw/dw_full_14k.h5
 
 model:
-  hidden_dims: [100, 100, 100]
+  hidden_dims: [500, 500, 500]
   activation: tanh
   norm: layernorm
 

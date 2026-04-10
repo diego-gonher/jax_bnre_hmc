@@ -26,11 +26,13 @@ from jax_bnre_hmc.data import make_joint_and_marginal
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
 from jax_bnre_hmc.model import RatioEstimatorTransformer
+from jax_bnre_hmc.plot_style import apply_plot_style
 from jax_bnre_hmc.train import TrainConfig, train, write_train_summary
 
 
 @hydra.main(config_path="../../configs/sinusoid_transformer", config_name="train", version_base="1.3")
 def main(cfg: DictConfig):
+    apply_plot_style()
     # -----------------------------
     # Load dataset
     # -----------------------------

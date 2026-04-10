@@ -26,6 +26,7 @@ from jax_bnre_hmc.hmc import (
     z_to_theta,
 )
 from jax_bnre_hmc.model import RatioEstimatorTransformer
+from jax_bnre_hmc.plot_style import apply_plot_style
 from jax_bnre_hmc.diagnostics import (
     check_sbc,
     plot_sbc_rank_histograms,
@@ -39,6 +40,7 @@ numpyro.set_host_device_count(4)
 
 @hydra.main(config_path="../../configs/sinusoid_transformer", config_name="hmc", version_base="1.3")
 def main(cfg: DictConfig):
+    apply_plot_style()
     run_dir = Path(cfg.run_dir).resolve()
     output_dir = Path(cfg.output_dir).resolve() if cfg.output_dir else run_dir / "hmc_results"
     try:

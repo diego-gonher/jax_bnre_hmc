@@ -20,6 +20,7 @@ from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_confi
 from jax_bnre_hmc.datasets import load_hdf5_dataset
 from jax_bnre_hmc.hmc import ConvexHullPrior, make_log_ratio_fn, make_potential_fn, run_nuts, z_to_theta, sample_uniform_in_convex_hull
 from jax_bnre_hmc.model import RatioEstimatorMLP
+from jax_bnre_hmc.plot_style import apply_plot_style
 from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 
 numpyro.set_host_device_count(4)
@@ -27,6 +28,7 @@ numpyro.set_host_device_count(4)
 
 @hydra.main(config_path="../../configs/amber501_skewers", config_name="hmc", version_base="1.3")
 def main(cfg: DictConfig):
+    apply_plot_style()
     dataset_file = cfg.data.get("dataset_file")
     if dataset_file is None:
         raise ValueError(

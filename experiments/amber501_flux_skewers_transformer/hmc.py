@@ -28,6 +28,7 @@ from jax_bnre_hmc.hmc import (
     sample_uniform_in_convex_hull,
 )
 from jax_bnre_hmc.model import RatioEstimatorTransformer
+from jax_bnre_hmc.plot_style import apply_plot_style
 from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
 
 numpyro.set_host_device_count(4)
@@ -39,6 +40,7 @@ numpyro.set_host_device_count(4)
     version_base="1.3",
 )
 def main(cfg: DictConfig):
+    apply_plot_style()
     dataset_file = cfg.data.get("dataset_file")
     if dataset_file is None:
         raise ValueError(

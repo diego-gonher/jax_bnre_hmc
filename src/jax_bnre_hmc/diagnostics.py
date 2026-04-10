@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 
+from jax_bnre_hmc.plot_style import apply_plot_style
+
 
 def l2_distance(x: jnp.ndarray, y: jnp.ndarray, axis: int = -1) -> jnp.ndarray:
     """
@@ -301,6 +303,7 @@ def plot_sbc_rank_histograms(
     Returns:
         ``(fig, axes)`` with ``axes`` shape ``(D,)`` (flattened row of subplots).
     """
+    apply_plot_style()
     ranks = np.asarray(ranks, dtype=np.float64)
     if ranks.ndim != 2:
         raise ValueError(f"ranks must have shape (N, D), got {ranks.shape}")

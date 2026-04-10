@@ -71,6 +71,9 @@ The code is written to be:
   - `load_best_params`: Restores best parameters for inference.  
   - `write_meta`: Writes small JSON metadata (`epoch`, `val_loss`) for latest/best.
 
+- **`plot_style.py`**  
+  - `apply_plot_style`: Applies the bundled matplotlib sheet `styles/science_nompl.mplstyle` (SciencePlots-inspired axes, ticks, and color cycle; **no** `text.usetex`, so a LaTeX install is not required). Experiment `train.py` / `hmc.py` entry points call this at startup; `plot_sbc_rank_histograms` in **`diagnostics.py`** also applies it before saving figures.
+
 - **`hmc.py`, `diagnostics.py`**  
   - Utilities for running HMC (NumPyro-based) using the learned ratio estimator, and for inspecting / diagnosing chains.  
   - **`diagnostics.py`** also provides **TARP** coverage curves (`run_tarp_jax`), **simulation-based calibration (SBC)** from posterior samples (`run_sbc_from_samples`, `check_sbc` with marginal rank **KS p-values** per parameter), and optional **SBC rank histogram** plotting (`plot_sbc_rank_histograms`). Canonical HMC scripts run TARP and SBC and record summary metrics in `hmc_summary.json` (see below).  
