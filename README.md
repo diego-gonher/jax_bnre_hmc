@@ -25,6 +25,7 @@ The code is written to be:
 - [Example: Sinusoid (end-to-end workflow)](#example-sinusoid-end-to-end-workflow)
 - [Using the Trained Ratio Estimator in HMC](#using-the-trained-ratio-estimator-in-hmc)
 - [Run summary JSON files](#run-summary-json-files)
+- [Generating the markdown report after HMC](#generating-the-markdown-report-after-hmc)
 - [Transformer ratio estimator for missing 1D data (masked observations)](#transformer-ratio-estimator-for-missing-1d-data-masked-observations)
 - [Using Codex CLI for the agentic workflow](#using-codex-cli-for-the-agentic-workflow)
 
@@ -406,6 +407,16 @@ Per-dimension **SBC KS p-values** and raw **TARP** curves are also printed and s
 | `status` | `"error"`. |
 | `message` | Error description. |
 
+### Generating the markdown report after HMC
+
+The canonical `experiments/*/hmc.py` scripts **do not** write `hmc_results/report.md`; they only produce JSON summaries, plots, and `posterior_samples.h5`. To build the same factual report used in the agent workflow, run this **after** training and HMC have finished successfully (so `train_summary.json`, `train.yaml`, and `hmc_results/hmc_summary.json` all exist):
+
+```bash
+python -m jax_bnre_hmc.report --run-dir outputs/<experiment_name>/<timestamp>
+```
+
+Use the **Hydra run root** as `--run-dir`—the directory that contains `train_summary.json` and the `hmc_results/` folder—not the `hmc_results` path alone. By default the module writes `hmc_results/report.md` from `templates/report_template.md`. For programmatic use, see `jax_bnre_hmc.report.generate_report` and `generate_report_for_experiment` in `AGENTS.md`.
+
 ---
 
 ## Transformer ratio estimator for missing 1D data (masked observations)
@@ -453,6 +464,8 @@ Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets
 ```
 
 Expected outputs include a Hydra run directory under `outputs/<experiment_name>/...`, `train_summary.json`, `hmc_results/hmc_summary.json`, and a generated markdown report at `hmc_results/report.md`.
+
+If you ran training and HMC yourself (without Codex), you can still generate `hmc_results/report.md` with `python -m jax_bnre_hmc.report --run-dir ...` as described in [Generating the markdown report after HMC](#generating-the-markdown-report-after-hmc).
 
 You can compare reports across runs to inspect how configuration changes (for example changing `train.bnre_lambda`) affect recorded metrics and diagnostics.
 
