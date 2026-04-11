@@ -19,6 +19,7 @@ num_samples: 4000
 n_observations: 100
 n_plots: 100
 seed: 2401
+device: cpu
 
 # Prior in scaled space [-1,1]^9
 prior:

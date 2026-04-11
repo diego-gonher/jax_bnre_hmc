@@ -13,6 +13,7 @@ num_samples: 8000
 n_observations: 500
 n_plots: 100
 seed: 2401
+device: cpu
 
 # Prior built from convex hull of scaled params in dataset (same dataset_file)
 prior:

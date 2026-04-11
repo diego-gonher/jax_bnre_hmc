@@ -1,34 +1,46 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
-import jax
-jax.config.update("jax_enable_x64", True)
-import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 import h5py
-import numpyro
 import corner
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import train_test_split
 from scipy.spatial import ConvexHull
 
-from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_config_path
-from jax_bnre_hmc.datasets import load_hdf5_dataset
-from jax_bnre_hmc.hmc import ConvexHullPrior, make_log_ratio_fn, make_potential_fn, run_nuts, z_to_theta, sample_uniform_in_convex_hull
-from jax_bnre_hmc.model import RatioEstimatorTransformer
-from jax_bnre_hmc.plotting import plot_tarp_ecp_curve
-from jax_bnre_hmc.plot_style import apply_plot_style
-from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
-
-numpyro.set_host_device_count(4)
-
 
 @hydra.main(config_path="../../configs/amber501_skewers_transformer", config_name="hmc", version_base="1.3")
 def main(cfg: DictConfig):
+    device = cfg.get("device", "cpu")
+    if device == "cpu":
+        os.environ["JAX_PLATFORMS"] = "cpu"
+    elif device == "single_gpu":
+        os.environ["JAX_PLATFORMS"] = "cuda"
+    else:
+        raise ValueError(f"Unknown device={device!r}. Use 'cpu' or 'single_gpu'.")
+
+    import jax
+    jax.config.update("jax_enable_x64", True)
+    import jax.numpy as jnp
+    import numpyro
+
+    if device == "cpu":
+        numpyro.set_host_device_count(4)
+
+    from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_config_path
+    from jax_bnre_hmc.datasets import load_hdf5_dataset
+    from jax_bnre_hmc.hmc import ConvexHullPrior, make_log_ratio_fn, make_potential_fn, run_nuts, z_to_theta, sample_uniform_in_convex_hull
+    from jax_bnre_hmc.model import RatioEstimatorTransformer
+    from jax_bnre_hmc.plotting import plot_tarp_ecp_curve
+    from jax_bnre_hmc.plot_style import apply_plot_style
+    from jax_bnre_hmc.diagnostics import run_tarp_jax, l2_distance
+
+    print(f"JAX backend: {jax.default_backend()}")
     apply_plot_style()
     dataset_file = cfg.data.get("dataset_file")
     if dataset_file is None:

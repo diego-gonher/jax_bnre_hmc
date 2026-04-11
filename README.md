@@ -21,6 +21,7 @@ The code is written to be:
 
 - [Repository Structure](#repository-structure)
 - [Installation](#installation)
+- [Device selection](#device-selection)
 - [HDF5 training dataset contract](#hdf5-training-dataset-contract)
 - [Example: Sinusoid (end-to-end workflow)](#example-sinusoid-end-to-end-workflow)
 - [Using the Trained Ratio Estimator in HMC](#using-the-trained-ratio-estimator-in-hmc)
@@ -139,6 +140,8 @@ Inside you’ll find:
 
 `pyproject.toml` is the canonical dependency source for this repository. The default editable install supports the documented end-to-end workflow (training + HMC via `experiments/*`).
 
+### CPU-only (default)
+
 From the repository root:
 
 ```bash
@@ -147,7 +150,32 @@ source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -e .
 ```
 
-Optional extras are for secondary tooling only (for example, local dev checks):
+This installs the CPU-only JAX/JAXLIB wheels. All experiment scripts default to `device: cpu`.
+
+### Single NVIDIA GPU
+
+To run training or HMC on a single NVIDIA GPU, install the CUDA-enabled JAX wheels **after** the base install:
+
+```bash
+pip install -e .
+pip install -U "jax[cuda12]"
+```
+
+The `jax[cuda12]` extra replaces the CPU-only `jaxlib` with CUDA 12 builds (which bundle the required CUDA libraries, so a separate CUDA toolkit install is **not** needed). All other dependencies (Flax, Optax, NumPyro, Orbax, etc.) work unchanged on either backend.
+
+If your driver only supports CUDA 11, use `jax[cuda11_pip]` instead (check the [JAX installation guide](https://jax.readthedocs.io/en/latest/installation.html) for the exact extra name matching your driver version).
+
+After installing, verify that JAX sees the GPU:
+
+```bash
+python -c "import jax; print(jax.devices())"
+```
+
+You should see a `CudaDevice` entry. Then set `device: single_gpu` in your experiment configs (see [Device selection](#device-selection) below).
+
+### Optional extras
+
+Development tooling (pytest, ruff):
 
 ```bash
 pip install -e ".[dev]"
@@ -160,7 +188,41 @@ conda env create -f environment.yml
 conda activate jax_bnre
 ```
 
-Make sure you have a compatible JAX / JAXLIB / NumPyro stack for your platform.
+For GPU with Conda, activate the environment and then run `pip install -U "jax[cuda12]"` as above.
+
+---
+
+## Device selection
+
+Every experiment config (`train.yaml` and `hmc.yaml`) has a top-level `device` key that controls whether JAX runs on CPU or GPU:
+
+```yaml
+device: cpu         # default — use CPU backend
+device: single_gpu  # use a single NVIDIA GPU (requires CUDA-enabled JAX)
+```
+
+You can also override from the command line without editing config files:
+
+```bash
+python experiments/sinusoid/train.py device=single_gpu
+python experiments/sinusoid/hmc.py device=single_gpu
+```
+
+When `device: cpu`, training scripts set `JAX_PLATFORMS=cpu` and HMC scripts enable NumPyro's multi-core CPU chain parallelism (`numpyro.set_host_device_count(4)`). When `device: single_gpu`, `JAX_PLATFORMS=cuda` is set and the multi-core CPU parallelism is skipped (chains run on the GPU instead).
+
+Each script prints the active backend at startup:
+
+```text
+JAX backend: cpu
+```
+
+or
+
+```text
+JAX backend: gpu
+```
+
+If `device: single_gpu` is set but no GPU is available (e.g. CUDA JAX is not installed), JAX will raise an error at startup.
 
 ---
 
@@ -221,6 +283,7 @@ hydra:
     dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
 
 seed: 0
+device: cpu  # "cpu" or "single_gpu"
 
 data:
   dataset_file: datasets/sinusoid/sinusoid_noisy_no_masks.h5
@@ -244,6 +307,7 @@ train:
 
 Key knobs:
 
+- **`device`**: `"cpu"` (default) or `"single_gpu"` to run on an NVIDIA GPU (see [Device selection](#device-selection)).
 - **`train.bnre_lambda`**: Set to `0.0` for standard NRE, or positive for BNRE.  
 - **`stop_after_epochs`**: Early stopping patience based on validation loss.  
 - **`save_every`**, **`checkpoint_dirname`**: Checkpointing frequency and location.  

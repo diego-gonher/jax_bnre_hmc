@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-os.environ["JAX_PLATFORMS"] = "cpu"
 os.environ["ABSL_LOGGING_THRESHOLD"] = "2"  # 0=INFO,1=WARNING,2=ERROR,3=FATAL
 
 from absl import logging as absl_logging
@@ -13,25 +12,35 @@ import time
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from pathlib import Path
-import jax
-import jax.numpy as jnp
 from omegaconf import DictConfig, OmegaConf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import h5py
 
-from jax_bnre_hmc.model import RatioEstimatorMLP
-from jax_bnre_hmc.plotting import save_training_diagnostic_plots
-from jax_bnre_hmc.plot_style import apply_plot_style
-from jax_bnre_hmc.train import TrainConfig, train
-from jax_bnre_hmc.data import make_joint_and_marginal
-from jax_bnre_hmc.checkpointing import load_best_params
-from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
-
 
 @hydra.main(config_path="../../configs/amber501_p1d", config_name="train", version_base="1.3")
 def main(cfg: DictConfig):
+    device = cfg.get("device", "cpu")
+    if device == "cpu":
+        os.environ["JAX_PLATFORMS"] = "cpu"
+    elif device == "single_gpu":
+        os.environ["JAX_PLATFORMS"] = "cuda"
+    else:
+        raise ValueError(f"Unknown device={device!r}. Use 'cpu' or 'single_gpu'.")
+
+    import jax
+    import jax.numpy as jnp
+    from jax_bnre_hmc.model import RatioEstimatorMLP
+    from jax_bnre_hmc.plotting import save_training_diagnostic_plots
+    from jax_bnre_hmc.plot_style import apply_plot_style
+    from jax_bnre_hmc.train import TrainConfig, train
+    from jax_bnre_hmc.data import make_joint_and_marginal
+    from jax_bnre_hmc.checkpointing import load_best_params
+    from jax_bnre_hmc.loss import nre_loss_bce_style_from_logits, nre_loss_from_logits
+
+    print(f"JAX backend: {jax.default_backend()}")
+
     apply_plot_style()
     # Set the seed
     key = jax.random.PRNGKey(int(cfg.seed))

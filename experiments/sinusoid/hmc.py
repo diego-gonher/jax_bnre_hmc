@@ -1,47 +1,57 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+import corner
+import h5py
 import hydra
-import jax
-jax.config.update("jax_enable_x64", True)
-import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-import numpyro
-import h5py
 from omegaconf import DictConfig, OmegaConf
-import corner
-
 from sklearn.preprocessing import MinMaxScaler
-
-from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_config_path
-from jax_bnre_hmc.datasets import load_hdf5_dataset
-from jax_bnre_hmc.diagnostics import (
-    check_sbc,
-    run_sbc_from_samples,
-    run_tarp_jax,
-    l2_distance,
-)
-from jax_bnre_hmc.hmc import (
-    BoxPrior,
-    aggregate_nuts_divergences,
-    make_log_ratio_fn,
-    make_potential_fn,
-    run_nuts,
-    write_hmc_summary,
-    z_to_theta,
-)
-from jax_bnre_hmc.model import RatioEstimatorMLP
-from jax_bnre_hmc.plotting import plot_sbc_rank_histograms, plot_tarp_ecp_curve
-from jax_bnre_hmc.plot_style import apply_plot_style
-
-
-numpyro.set_host_device_count(4)
 
 
 @hydra.main(config_path="../../configs/sinusoid", config_name="hmc", version_base="1.3")
 def main(cfg: DictConfig):
+    device = cfg.get("device", "cpu")
+    if device == "cpu":
+        os.environ["JAX_PLATFORMS"] = "cpu"
+    elif device == "single_gpu":
+        os.environ["JAX_PLATFORMS"] = "cuda"
+    else:
+        raise ValueError(f"Unknown device={device!r}. Use 'cpu' or 'single_gpu'.")
+
+    import jax
+    jax.config.update("jax_enable_x64", True)
+    import jax.numpy as jnp
+    import numpyro
+
+    if device == "cpu":
+        numpyro.set_host_device_count(4)
+
+    from jax_bnre_hmc.checkpointing import load_best_params, resolve_run_train_config_path
+    from jax_bnre_hmc.datasets import load_hdf5_dataset
+    from jax_bnre_hmc.diagnostics import (
+        check_sbc,
+        run_sbc_from_samples,
+        run_tarp_jax,
+        l2_distance,
+    )
+    from jax_bnre_hmc.hmc import (
+        BoxPrior,
+        aggregate_nuts_divergences,
+        make_log_ratio_fn,
+        make_potential_fn,
+        run_nuts,
+        write_hmc_summary,
+        z_to_theta,
+    )
+    from jax_bnre_hmc.model import RatioEstimatorMLP
+    from jax_bnre_hmc.plotting import plot_sbc_rank_histograms, plot_tarp_ecp_curve
+    from jax_bnre_hmc.plot_style import apply_plot_style
+
+    print(f"JAX backend: {jax.default_backend()}")
     apply_plot_style()
     run_dir = Path(cfg.run_dir).resolve()
     output_dir = Path(cfg.output_dir).resolve() if cfg.output_dir else run_dir / "hmc_results"

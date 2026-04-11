@@ -7,6 +7,7 @@ hydra:
     dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
 
 seed: 0
+device: cpu
 
 data:
   dataset_file: /Users/diegogonzalez/Documents/Research/ENIGMA/BNRE-HMC/jax_bnre_hmc/datasets/amber501/mocks_z5.00_snr30.0.hdf5

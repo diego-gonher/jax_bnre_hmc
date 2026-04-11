@@ -7,6 +7,7 @@ hydra:
     dir: outputs/${exp_name}/${now:%Y-%m-%d}_${now:%H-%M-%S}
 
 seed: 0
+device: cpu
 
 data:
   dataset_file: datasets/sinusoid/sinusoid_noisy_no_masks.h5  # path to HDF5 with theta, y_obs; null = must set via CLI or override
