@@ -250,6 +250,7 @@ def main(cfg: DictConfig):
             sbc_num_samples,
             labels=sbc_labels,
             ks_pvals=ks_pvals,
+            bins=30,
             output_path=output_dir / "sbc_rank_histograms.png",
         )
         plt.close(fig_sbc)
