@@ -26,5 +26,3 @@ prior:
   type: box
   low: [-1.0, -1.0, -1.0, -1.0]
   high: [1.0, 1.0, 1.0, 1.0]
-
-corner_labels: ["A", "f", "phi", "b"]
