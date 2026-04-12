@@ -174,7 +174,7 @@ def main(cfg: DictConfig):
                 samples,
                 labels=corner_labels,
                 truths=true_params,
-                show_titles=False,
+                show_titles=True,
             )
             figure.savefig(output_dir / f"corner_observation_{idx}.pdf")
             print(f"Saved corner plot for observation {idx}")

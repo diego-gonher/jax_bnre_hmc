@@ -202,7 +202,7 @@ def main(cfg: DictConfig):
                 samples,
                 labels=corner_labels,
                 truths=true_params,
-                show_titles=False,
+                show_titles=True,
             )
             outname = output_dir / f"corner_observation_{idx}.pdf"
             figure.savefig(outname)
