@@ -261,7 +261,7 @@ def main(cfg: DictConfig):
         val_bce_losses,
         pj,
         pm,
-        sigmoid_filename="sigmoid_subset.png",
+        sigmoid_filename="sigmoid_subset.pdf",
         n_plot=n_plot,
     )
 

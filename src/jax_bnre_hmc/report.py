@@ -15,12 +15,12 @@ def _require_file(path: Path, description: str) -> None:
 
 
 def _maybe_corner_block(hmc_dir: Path, idx: int) -> str:
-    corner_path = hmc_dir / f"corner_observation_{idx}.png"
+    corner_path = hmc_dir / f"corner_observation_{idx}.pdf"
     if not corner_path.is_file():
         return ""
     return (
         f"#### Observation {idx}\n"
-        f"![Corner {idx}](corner_observation_{idx}.png)\n"
+        f"![Corner {idx}](corner_observation_{idx}.pdf)\n"
     )
 
 

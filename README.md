@@ -77,7 +77,7 @@ The code is written to be:
 
 - **`plotting.py`** (matplotlib only; numerics stay in `diagnostics.py`)  
   - `save_training_diagnostic_plots`: Loss curves, BCE-style losses, and joint/marginal sigmoid traces under the Hydra run directory (used by experiment `train.py` scripts).  
-  - `plot_tarp_ecp_curve`: TARP ECP vs $\alpha$ figure (`tarp_ecp_curve.png`).  
+  - `plot_tarp_ecp_curve`: TARP ECP vs $\alpha$ figure (`tarp_ecp_curve.pdf`).  
   - `plot_sbc_rank_histograms`: Per-dimension SBC rank histograms; **re-exported** from **`diagnostics.py`** for backward-compatible imports.
 
 - **`hmc.py`, `diagnostics.py`**  
@@ -127,7 +127,7 @@ Inside you’ll find:
 
 - **`train.yaml`** – full resolved Hydra training config for the run (older runs may use `config.yaml`; HMC loads `train.yaml` when present).  
 - **`metrics.txt`** – final losses and summary statistics.  
-- **`losses.png`, `bce_style_losses.png`, `sigmoid.png`** – training curves and diagnostic plots.  
+- **`losses.pdf`, `bce_style_losses.pdf`, `sigmoid.pdf`** – training curves and diagnostic plots.  
 - **`checkpoints/`** –  
   - `latest/` – full `TrainState` (latest epoch).  
   - `best/` – best params only.  
@@ -470,7 +470,7 @@ Written under **`output_dir`** (default `run_dir/hmc_results/`) by the canonical
 
 SBC is performed in the same parameter space used by HMC (i.e., after any scaling or transformations applied in the experiment scripts).
 
-Per-dimension **SBC KS p-values** and raw **TARP** curves are also printed and saved in **`hmc_metrics.txt`** and plots (`sbc_rank_histograms.png`, `tarp_ecp_curve.png`) in the same folder.
+Per-dimension **SBC KS p-values** and raw **TARP** curves are also printed and saved in **`hmc_metrics.txt`** and plots (`sbc_rank_histograms.pdf`, `tarp_ecp_curve.pdf`) in the same folder.
 
 **Error (`status: "error"`):**
 

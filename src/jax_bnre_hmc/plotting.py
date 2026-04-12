@@ -28,7 +28,7 @@ def save_training_diagnostic_plots(
     pj: Any,
     pm: Any,
     *,
-    sigmoid_filename: str = "sigmoid.png",
+    sigmoid_filename: str = "sigmoid.pdf",
     n_plot: int | None = None,
     figsize: tuple[float, float] = (10.0, 5.0),
     dpi: int = 150,
@@ -36,11 +36,11 @@ def save_training_diagnostic_plots(
     """Save standard training plots under ``run_dir`` (losses, BCE-style losses, sigmoid curves).
 
     Args:
-        run_dir: Hydra run directory for output PNGs.
+        run_dir: Hydra run directory for output plots.
         train_losses, val_losses: Total loss per epoch.
         train_bce_losses, val_bce_losses: BCE-style NRE loss per epoch.
         pj, pm: Sigmoid of joint / marginal logits (1D sequences); converted with ``numpy.asarray``.
-        sigmoid_filename: Output name for the sigmoid plot (e.g. ``sigmoid.png`` or ``sigmoid_subset.png``).
+        sigmoid_filename: Output name for the sigmoid plot (e.g. ``sigmoid.pdf`` or ``sigmoid_subset.pdf``).
         n_plot: If set, plot only ``pj[:n_plot]`` and ``pm[:n_plot]`` (e.g. long sequences).
         figsize: Figure size for all three figures.
         dpi: Rasterization DPI for ``savefig``.
@@ -58,14 +58,14 @@ def save_training_diagnostic_plots(
     plt.plot(train_losses, label="train_loss")
     plt.plot(val_losses, label="val_loss")
     plt.legend()
-    plt.savefig(run_dir / "losses.png", dpi=dpi, bbox_inches="tight")
+    plt.savefig(run_dir / "losses.pdf", dpi=dpi, bbox_inches="tight")
     plt.close()
 
     plt.figure(figsize=figsize)
     plt.plot(train_bce_losses, label="train_bce_style_loss")
     plt.plot(val_bce_losses, label="val_bce_style_loss")
     plt.legend()
-    plt.savefig(run_dir / "bce_style_losses.png", dpi=dpi, bbox_inches="tight")
+    plt.savefig(run_dir / "bce_style_losses.pdf", dpi=dpi, bbox_inches="tight")
     plt.close()
 
     plt.figure(figsize=figsize)
@@ -81,7 +81,7 @@ def plot_tarp_ecp_curve(
     alpha_grid: Any,
     ecp: Any,
     *,
-    filename: str = "tarp_ecp_curve.png",
+    filename: str = "tarp_ecp_curve.pdf",
     figsize: tuple[float, float] = (4.0, 4.0),
     dpi: int = 256,
     bbox_inches: str = "tight",
@@ -92,7 +92,7 @@ def plot_tarp_ecp_curve(
         output_dir: Directory for ``filename`` (typically ``hmc_results/``).
         alpha_grid: Credibility levels (x-axis), shape ``(K,)`` (array-like).
         ecp: Empirical coverage values (y-axis), same length as ``alpha_grid``.
-        filename: Output PNG name.
+        filename: Output file name.
         figsize: Figure size in inches.
         dpi: Rasterization DPI.
         bbox_inches: Passed to ``savefig``.

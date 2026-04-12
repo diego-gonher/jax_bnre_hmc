@@ -170,12 +170,9 @@ def main(cfg: DictConfig):
             samples,
             labels=corner_labels,
             truths=true_params,
-            show_titles=True,
-            title_fmt=".3f",
-            title_kwargs={"fontsize": 12},
+            show_titles=False,
         )
-        figure.suptitle(f"Posterior for Observation {idx}", fontsize=16)
-        figure.savefig(output_dir / f"corner_observation_{idx}.png")
+        figure.savefig(output_dir / f"corner_observation_{idx}.pdf")
         print(f"Saved corner plot for observation {idx}")
         plt.close("all")
 

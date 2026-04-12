@@ -144,7 +144,7 @@ Located in:
 
 Includes:
 - `train_summary.json`
-- `losses.png`
+- `losses.pdf`
 - checkpoints
 
 ### HMC outputs
@@ -155,9 +155,9 @@ Includes:
 - `hmc_summary.json`
 - `hmc_metrics.txt`
 - `posterior_samples.h5`
-- `tarp_ecp_curve.png`
-- `sbc_rank_histograms.png`
-- `corner_observation_*.png`
+- `tarp_ecp_curve.pdf`
+- `sbc_rank_histograms.pdf`
+- `corner_observation_*.pdf`
 
 Use these as the **only source of truth**.
 
@@ -189,7 +189,7 @@ Output (default):
 Inputs (handled by the module):
 - `train_summary.json`, `train.yaml` at the run root
 - `hmc_results/hmc_summary.json`
-- optional `hmc_results/corner_observation_<idx>.png` (up to the configured count)
+- optional `hmc_results/corner_observation_<idx>.pdf` (up to the configured count)
 
 Plots referenced in the template:
 - training loss plot

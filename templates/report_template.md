@@ -26,7 +26,7 @@
 
 ### Loss curves
 
-![Loss curves](../losses.png)
+![Loss curves](../losses.pdf)
 
 ---
 
@@ -57,25 +57,25 @@
 ### Corner plots (first three observations)
 
 #### Observation 0
-![Corner 0](corner_observation_0.png)
+![Corner 0](corner_observation_0.pdf)
 
 #### Observation 1
-![Corner 1](corner_observation_1.png)
+![Corner 1](corner_observation_1.pdf)
 
 #### Observation 2
-![Corner 2](corner_observation_2.png)
+![Corner 2](corner_observation_2.pdf)
 
 ---
 
 ### TARP coverage curve
 
-![TARP curve](tarp_ecp_curve.png)
+![TARP curve](tarp_ecp_curve.pdf)
 
 ---
 
 ### SBC rank histograms
 
-![SBC ranks](sbc_rank_histograms.png)
+![SBC ranks](sbc_rank_histograms.pdf)
 
 ---
 

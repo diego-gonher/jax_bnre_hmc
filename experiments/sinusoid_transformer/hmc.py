@@ -202,12 +202,9 @@ def main(cfg: DictConfig):
                 samples,
                 labels=corner_labels,
                 truths=true_params,
-                show_titles=True,
-                title_fmt=".3f",
-                title_kwargs={"fontsize": 12},
+                show_titles=False,
             )
-            figure.suptitle(f"Posterior for Observation {idx}", fontsize=16)
-            outname = output_dir / f"corner_observation_{idx}.png"
+            outname = output_dir / f"corner_observation_{idx}.pdf"
             figure.savefig(outname)
             plt.close(figure)
             print(f"Saved corner plot for observation {idx} as {outname}")
@@ -281,7 +278,7 @@ def main(cfg: DictConfig):
             labels=sbc_labels,
             ks_pvals=ks_pvals,
             bins=30,
-            output_path=output_dir / "sbc_rank_histograms.png",
+            output_path=output_dir / "sbc_rank_histograms.pdf",
         )
         plt.close(fig_sbc)
 
