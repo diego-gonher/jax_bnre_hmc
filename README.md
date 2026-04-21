@@ -23,12 +23,13 @@ The code is written to be:
 - [Installation](#installation)
 - [Device selection](#device-selection)
 - [HDF5 training dataset contract](#hdf5-training-dataset-contract)
+- [Benchmark dataset generation](#benchmark-dataset-generation)
 - [Example: Sinusoid (end-to-end workflow)](#example-sinusoid-end-to-end-workflow)
 - [Using the Trained Ratio Estimator in HMC](#using-the-trained-ratio-estimator-in-hmc)
 - [Run summary JSON files](#run-summary-json-files)
 - [Generating the markdown report after HMC](#generating-the-markdown-report-after-hmc)
 - [Transformer ratio estimator for missing 1D data (masked observations)](#transformer-ratio-estimator-for-missing-1d-data-masked-observations)
-- [Using Codex CLI for the agentic workflow](#using-codex-cli-for-the-agentic-workflow)
+- [Using Codex CLI or Claude Code for the agentic workflow](#using-codex-cli-or-claude-code-for-the-agentic-workflow)
 
 ---
 
@@ -262,6 +263,31 @@ If **any** mask dataset is present, **all three** must be present. Each mask mus
 - `description` and any other attributes are collected into `LoadedDataset.metadata`
 
 No scaling, shuffling, or reshaping is applied in the loader (see `load_hdf5_dataset` docstring); fit scaling on train only and apply downstream, together with any experiment-specific preprocessing in `train.py` / `hmc.py`.
+
+---
+
+## Benchmark dataset generation
+
+In addition to consuming prebuilt HDF5 files, this repository includes reproducible scripts to regenerate the benchmark datasets used in the project. Each benchmark folder under `datasets/` provides a `generate_dataset.py` script and a local README with full model and argument details:
+
+- `datasets/sinusoid/generate_dataset.py`
+- `datasets/lotka_volterra/generate_dataset.py`
+- `datasets/sir/generate_dataset.py`
+
+From the repository root, typical commands are:
+
+```bash
+python datasets/sinusoid/generate_dataset.py --out datasets/sinusoid/sinusoid_noisy_no_masks.h5
+python datasets/sinusoid/generate_dataset.py --out datasets/sinusoid/sinusoid_noisy_with_masks.h5 --use_mask
+python datasets/lotka_volterra/generate_dataset.py --out datasets/lotka_volterra/lotka_volterra_no_masks.h5
+python datasets/sir/generate_dataset.py --out datasets/sir/sir_no_masks.h5
+```
+
+These scripts generate the same split structure expected by the training pipeline (`theta_train/x_train`, `theta_val/x_val`, `theta_test/x_test`, and masks where applicable). For benchmark-specific assumptions, defaults, and optional arguments, see:
+
+- `datasets/sinusoid/README.md`
+- `datasets/lotka_volterra/README.md`
+- `datasets/sir/README.md`
 
 ---
 
@@ -512,22 +538,29 @@ See:
 
 ---
 
-## Using Codex CLI for the agentic workflow
+## Using Codex CLI or Claude Code for the agentic workflow
 
-You can use Codex as a lightweight lab-technician layer for this repository. The expected workflow and constraints are documented in `AGENTS.md`, so start Codex from a shell where your intended Python environment is already activated, then give it a single natural-language prompt with:
+You can use either **Codex CLI** or **Claude Code** as a lightweight lab-technician layer for this repository. The expected workflow and constraints are documented in:
+
+- `AGENTS.md` (for Codex)
+- `CLAUDE.md` (for Claude Code)
+
+Start your tool from a shell where your intended Python environment is already activated, then give it a single natural-language prompt with:
 
 - dataset path
 - experiment name
 - whether masks are present
 - preprocessing instructions
 
-Codex should then follow the repository workflow: inspect the dataset, choose the correct canonical template, create/adapt experiment files, run training, run HMC, and generate the report.
+The agent should then follow the repository workflow: inspect the dataset, choose the correct canonical template, create/adapt experiment files, run training, run HMC, and generate the report.
 
 Reusable prompt template:
 
 ```text
 Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets/<dataset_folder>/<dataset_file>.h5', experiment name '<experiment_name>', there is no missing data, use MinMax scaling to [-1, 1] for both theta and x (fit on train only).
 ```
+
+For Claude Code, use the same prompt but replace `AGENTS.md` with `CLAUDE.md`.
 
 Concrete example:
 
@@ -537,7 +570,7 @@ Follow AGENTS.md strictly. Run experiment using the dataset located in 'datasets
 
 Expected outputs include a Hydra run directory under `outputs/<experiment_name>/...`, `train_summary.json`, `hmc_results/hmc_summary.json`, and a generated markdown report at `hmc_results/report.md`.
 
-If you ran training and HMC yourself (without Codex), you can still generate `hmc_results/report.md` with `python -m jax_bnre_hmc.report --run-dir ...` as described in [Generating the markdown report after HMC](#generating-the-markdown-report-after-hmc).
+If you ran training and HMC yourself (without an agent tool), you can still generate `hmc_results/report.md` with `python -m jax_bnre_hmc.report --run-dir ...` as described in [Generating the markdown report after HMC](#generating-the-markdown-report-after-hmc).
 
 You can compare reports across runs to inspect how configuration changes (for example changing `train.bnre_lambda`) affect recorded metrics and diagnostics.
 
