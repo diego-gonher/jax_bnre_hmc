@@ -197,15 +197,6 @@ def main(cfg: DictConfig):
         print("All done.")
         print("Posterior samples shape:", posterior_samples.shape)
 
-        # Use parameter labels from metadata if available
-        theta_names = None
-        with h5py.File(dataset_path, "r") as f:
-            theta_names_raw = f.attrs["theta_names"]
-            theta_names = [
-                s.decode("utf-8") if isinstance(s, bytes) else s
-                for s in theta_names_raw
-                ]
-
         n_plots = min(int(cfg.n_plots), n_obs)
 
         corner_labels = theta_names
