@@ -86,6 +86,17 @@ def main(cfg: DictConfig):
 
         print(f"\nLoading dataset from {dataset_file}")
         loaded = load_hdf5_dataset(dataset_file, validate=True)
+
+        with h5py.File(dataset_file, "r") as f:
+            if "theta_names" in f.attrs:
+                theta_names_raw = f.attrs["theta_names"]
+                theta_names = [
+                    s.decode("utf-8") if isinstance(s, bytes) else s
+                    for s in theta_names_raw
+                ]
+            else:
+                theta_names = None
+                
         splits = loaded.splits
 
         theta_train_raw = splits.theta_train
