@@ -89,23 +89,51 @@ $$
 
 ## Data Representation
 
-Each observation is represented as:
+Two dataset variants are supported:
+
+### 1. Unmasked dataset
+
+Each observation is represented as a 1D time series:
+
+$$
+x_i = y_i^{\text{obs}}
+$$
+
+so that:
+
+$$
+x \in \mathbb{R}^{N_{\text{time}}}
+$$
+
+Datasets follow:
+
+- `theta_*`: shape `(N, 4)`
+- `x_*`: shape `(N, N_time)`
+
+---
+
+### 2. Masked dataset
+
+Each observation includes a binary mask:
 
 $$
 x_i = [y_i^{\text{obs}},\ m_i]
 $$
 
-so that the full input has shape:
+so that:
 
 $$
 x \in \mathbb{R}^{N_{\text{time}} \times 2}
 $$
 
-Datasets follow the standard pipeline contract:
+Datasets follow:
 
 - `theta_*`: shape `(N, 4)`
 - `x_*`: shape `(N, N_time, 2)`
 - `mask_*`: shape `(N, N_time)`
+
+
+The masked and unmasked datasets are generated from the same underlying process, with masking applied only in the masked variant.
 
 ---
 
