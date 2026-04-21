@@ -114,24 +114,29 @@ Datasets follow:
 
 ### 2. Masked dataset
 
-Each observation includes a binary mask:
+The observed values are still stored as a 1D time series:
 
 $$
-x_i = [y_i^{\text{obs}},\ m_i]
+x_i = y_i^{\text{obs}}
 $$
 
 so that:
 
 $$
-x \in \mathbb{R}^{N_{\text{time}} \times 2}
+x \in \mathbb{R}^{N_{\text{time}}}
+$$
+
+Missingness is stored separately through a binary mask:
+
+$$
+m \in \mathbb{R}^{N_{\text{time}}}
 $$
 
 Datasets follow:
 
 - `theta_*`: shape `(N, 4)`
-- `x_*`: shape `(N, N_time, 2)`
-- `mask_*`: shape `(N, N_time)`
-
+- `x_*`: shape `(N, N_time)`
+- `x_*_mask`: shape `(N, N_time)`
 
 The masked and unmasked datasets are generated from the same underlying process, with masking applied only in the masked variant.
 

@@ -48,7 +48,7 @@ def simulate_one(key, n_time):
 
 
 def random_mask(key, n_time):
-    k1, k2 = jax.random.split(key, 2)
+    k1, k2, k3 = jax.random.split(key, 3)
 
     n_blocks = int(jax.random.randint(k1, (), 1, 4))
     frac = float(jax.random.uniform(k2, (), minval=0.1, maxval=0.25))
@@ -56,14 +56,14 @@ def random_mask(key, n_time):
 
     m = np.ones(n_time, dtype=np.float32)
 
-    rng = np.random.default_rng(int(jax.random.randint(k1, (), 0, 1_000_000)))
+    rng = np.random.default_rng(int(jax.random.randint(k3, (), 0, 1_000_000)))
     for _ in range(n_blocks):
         block_len = max(4, total_len // n_blocks)
         block_len = min(block_len, n_time)
         start = rng.integers(0, n_time - block_len + 1)
         m[start:start + block_len] = 0.0
 
-    return jnp.array(m, dtype=jnp.float32)
+    return np.array(m, dtype=np.float32)
 
 
 def simulate_batch(key, n_sim, n_time, use_mask):
@@ -78,15 +78,12 @@ def simulate_batch(key, n_sim, n_time, use_mask):
 
         theta, y_obs = simulate_one(k1, n_time)
 
+        thetas.append(np.array(theta, dtype=np.float32))
+        xs.append(np.array(y_obs, dtype=np.float32))
+
         if use_mask:
             mask = random_mask(k2, n_time)
-            x = jnp.stack([y_obs, mask], axis=-1)   # shape (T, 2)
-            masks.append(np.array(mask, dtype=np.float32))
-        else:
-            x = y_obs  # shape (T,)
-
-        thetas.append(np.array(theta, dtype=np.float32))
-        xs.append(np.array(x, dtype=np.float32))
+            masks.append(mask)
 
     theta = np.stack(thetas, axis=0)
     x = np.stack(xs, axis=0)
@@ -109,9 +106,9 @@ def make_splits(theta, x, mask, n_train, n_val):
     }
 
     if mask is not None:
-        data["mask_train"] = mask[:n_train]
-        data["mask_val"] = mask[n_train:n_train + n_val]
-        data["mask_test"] = mask[n_train + n_val:]
+        data["x_train_mask"] = mask[:n_train]
+        data["x_val_mask"] = mask[n_train:n_train + n_val]
+        data["x_test_mask"] = mask[n_train + n_val:]
 
     return data
 
