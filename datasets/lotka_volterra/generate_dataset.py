@@ -110,7 +110,8 @@ def save_dataset(
         f.create_dataset("theta_test", data=theta_test, compression="gzip")
         f.create_dataset("x_test", data=x_test, compression="gzip")
 
-        f.attrs["theta_names"] = "alpha, beta, gamma, delta"
+        theta_names = np.array([r"$\alpha$", r"$\beta$", r"$\gamma$", r"$delta$"], dtype="S")
+        f.attrs["theta_names"] = theta_names
         f.attrs["days"] = float(days)
         f.attrs["saveat"] = float(saveat)
         f.attrs["subsample_stride"] = int(subsample_stride)
