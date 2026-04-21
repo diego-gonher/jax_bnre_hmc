@@ -19,5 +19,7 @@ datasets/*/*.p
 # Ongoing experiments
 */2param/
 */dw_*/
+*/amber501*/*
+*/dw/*
 
 .DS_Store
