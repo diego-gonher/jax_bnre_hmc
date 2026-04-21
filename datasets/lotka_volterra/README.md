@@ -80,7 +80,7 @@ x_i^{\text{obs}} \sim \text{LogNormal}(\log(x_i^{\text{sub}}),\ \sigma)
 $$
 
 where:
-- $\sigma = \text{obs\_noise\_log\_scale}$
+- $\sigma =$  obs\_noise\_log\_scale
 
 This produces a positive-valued noisy summary vector.
 
