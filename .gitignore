@@ -12,6 +12,12 @@ outputs/
 .multirun/
 
 # Datasets
-datasets/
+datasets/*/*.h5
+datasets/*/*.hdf5
+datasets/*/*.p
+
+# Ongoing experiments
+*/2param/
+*/dw_*/
 
 .DS_Store
