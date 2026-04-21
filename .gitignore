@@ -21,5 +21,8 @@ datasets/*/*.p
 */dw_*/
 */amber501*/*
 */dw/*
+*/sir/*
+*/lotka_volterra/*
+
 
 .DS_Store
