@@ -102,7 +102,7 @@ def plot_tarp_ecp_curve(
     alpha_np = np.asarray(alpha_grid)
     ecp_np = np.asarray(ecp)
     plt.figure(figsize=figsize)
-    plt.plot(alpha_np, ecp_np)
+    plt.plot(alpha_np, ecp_np, color='#6984A9', linewidth=1.25)
     plt.plot([0, 1], [0, 1], "k--", label="Ideal")
     plt.xlabel("Credibility Level (α)")
     plt.ylabel("Empirical Coverage Probability (ECP)")
@@ -194,7 +194,7 @@ def plot_sbc_rank_histograms(
             ranks[:, j],
             bins=n_bins,
             range=(0.0, float(s)),
-            color="steelblue",
+            color="#6984A9",
             edgecolor="white",
             linewidth=0.5,
             zorder=2,
