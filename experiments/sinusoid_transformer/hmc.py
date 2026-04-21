@@ -230,7 +230,7 @@ def main(cfg: DictConfig):
             thetas=jnp.asarray(theta_true),
             references=references,
             distance=l2_distance,
-            num_bins=30,
+            num_bins=20,
             z_score_theta=True,
             eps=1e-10,
         )
@@ -283,7 +283,7 @@ def main(cfg: DictConfig):
             sbc_num_samples,
             labels=sbc_labels,
             ks_pvals=ks_pvals,
-            bins=30,
+            bins=20,
             output_path=output_dir / "sbc_rank_histograms.pdf",
         )
         plt.close(fig_sbc)
