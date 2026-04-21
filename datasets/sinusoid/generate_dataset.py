@@ -120,7 +120,8 @@ def save_hdf5(path, data, use_mask, n_time, seed):
         for k, v in data.items():
             f.create_dataset(k, data=v, compression="gzip")
 
-        f.attrs["theta_names"] = "A, f, phi, b"
+        theta_names = np.array([r"$A$", r"$f$", r"$\phi$", r"$b$"], dtype="S")
+        f.attrs["theta_names"] = theta_names
         f.attrs["n_time"] = int(n_time)
         f.attrs["seed"] = int(seed)
         f.attrs["use_mask"] = bool(use_mask)
