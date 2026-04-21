@@ -188,8 +188,12 @@ def main(cfg: DictConfig):
 
         # Use parameter labels from metadata if available
         theta_names = None
-        if loaded.metadata is not None and loaded.metadata.theta_names:
-            theta_names = [s.decode("utf-8") if isinstance(s, bytes) else s for s in f.attrs["theta_names"]]
+        with h5py.File(dataset_path, "r") as f:
+            theta_names_raw = f.attrs["theta_names"]
+            theta_names = [
+                s.decode("utf-8") if isinstance(s, bytes) else s
+                for s in theta_names_raw
+                ]
 
         n_plots = min(int(cfg.n_plots), n_obs)
 
