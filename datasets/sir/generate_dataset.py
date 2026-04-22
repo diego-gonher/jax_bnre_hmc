@@ -128,7 +128,7 @@ def save_dataset(
         f.create_dataset("theta_test", data=theta_test, compression="gzip")
         f.create_dataset("x_test", data=x_test, compression="gzip")
 
-        theta_names = np.array([r"$\betta$", r"$\gamma$"], dtype="S")
+        theta_names = np.array([r"$\beta$", r"$\gamma$"], dtype="S")
         f.attrs["theta_names"] = theta_names
         f.attrs["N"] = float(N)
         f.attrs["I0"] = float(I0)
