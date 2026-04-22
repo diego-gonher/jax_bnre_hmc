@@ -95,7 +95,7 @@ def plot_tarp_ecp_curve(
         filename: Output file name.
         figsize: Figure size in inches.
         dpi: Rasterization DPI.
-        bbox_inches: Passed to ``savefig``.
+        bbox_inches: Passed to ``savefig`git `.
     """
     apply_plot_style()
     output_dir = Path(output_dir)
@@ -104,9 +104,8 @@ def plot_tarp_ecp_curve(
     plt.figure(figsize=figsize)
     plt.plot(alpha_np, ecp_np, color='#6984A9', linewidth=1.25)
     plt.plot([0, 1], [0, 1], "k--", label="Ideal")
-    plt.xlabel("Credibility Level (α)")
+    plt.xlabel(r"Credibility Level ($\alpha$)")
     plt.ylabel("Empirical Coverage Probability (ECP)")
-    plt.title("TARP: Empirical Coverage Probability Curve")
     plt.axis("square")
     plt.xlim(0, 1)
     plt.ylim(0, 1)
