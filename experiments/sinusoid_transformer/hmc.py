@@ -209,11 +209,16 @@ def main(cfg: DictConfig):
                 labels=corner_labels,
                 truths=true_params,
                 show_titles=True,
+                label_kwargs={"fontsize": 18},   # axis labels
+                title_kwargs={"fontsize": 16},   # titles (1D hist)
             )
-            outname = output_dir / f"corner_observation_{idx}.pdf"
-            figure.savefig(outname)
+
+            for ax in figure.get_axes():
+                ax.tick_params(axis="both", labelsize=14)
+
+            figure.savefig(output_dir / f"corner_observation_{idx}.pdf")
+            print(f"Saved corner plot for observation {idx}")
             plt.close(figure)
-            print(f"Saved corner plot for observation {idx} as {outname}")
 
         posterior_samples_tarp = jnp.transpose(posterior_samples, (2, 0, 1))
         posterior_samples_unscaled_snd = np.transpose(posterior_samples_unscaled, (1, 0, 2))

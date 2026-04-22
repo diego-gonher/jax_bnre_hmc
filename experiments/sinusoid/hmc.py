@@ -181,7 +181,13 @@ def main(cfg: DictConfig):
                 labels=corner_labels,
                 truths=true_params,
                 show_titles=True,
+                label_kwargs={"fontsize": 18},   # axis labels
+                title_kwargs={"fontsize": 16},   # titles (1D hist)
             )
+
+            for ax in figure.get_axes():
+                ax.tick_params(axis="both", labelsize=14)
+
             figure.savefig(output_dir / f"corner_observation_{idx}.pdf")
             print(f"Saved corner plot for observation {idx}")
             plt.close(figure)
