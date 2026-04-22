@@ -102,14 +102,15 @@ def plot_tarp_ecp_curve(
     alpha_np = np.asarray(alpha_grid)
     ecp_np = np.asarray(ecp)
     plt.figure(figsize=figsize)
-    plt.plot(alpha_np, ecp_np, color='#6984A9', linewidth=1.25)
+    plt.plot(alpha_np, ecp_np, color='#00B7B5', linewidth=1.5, label='Coverage')
     plt.plot([0, 1], [0, 1], "k--", label="Ideal")
-    plt.xlabel(r"Credibility Level ($\alpha$)")
-    plt.ylabel("Empirical Coverage Probability (ECP)")
+    plt.xlabel(r"Credibility Level ($\alpha$)", fontsize=14)
+    plt.ylabel("Empirical Coverage Probability (ECP)", fontsize=14)
+    plt.tick_params(axis="both", labelsize=11.5)
     plt.axis("square")
     plt.xlim(0, 1)
     plt.ylim(0, 1)
-    plt.legend()
+    plt.legend(fontsize=12)
     plt.savefig(output_dir / filename, dpi=dpi, bbox_inches=bbox_inches)
     plt.close()
 
@@ -171,7 +172,7 @@ def plot_sbc_rank_histograms(
     bin_edges = np.linspace(0.0, float(s), n_bins + 1)
 
     if figsize is None:
-        figsize = (max(3.2 * d, 3.5), 3.2)
+        figsize = (max(3.0 * d, 3.5), 3.2)
 
     fig, axes_2d = plt.subplots(1, d, figsize=figsize, squeeze=False, sharey=True)
     axes = axes_2d.ravel()
@@ -193,25 +194,42 @@ def plot_sbc_rank_histograms(
             ranks[:, j],
             bins=n_bins,
             range=(0.0, float(s)),
-            color="#6984A9",
+            color="#00B7B5",
             edgecolor="white",
             linewidth=0.5,
             zorder=2,
         )
         ax.axhline(expected_count, color="k", linestyle="--", linewidth=1.0, alpha=0.7, zorder=3)
         ax.set_xlim(0.0, float(s))
-        ax.set_xlabel("rank")
+        ax.set_xlabel("rank", fontsize=16)
+        ax.tick_params(axis="both", labelsize=12)
         if j == 0:
-            ax.set_ylabel("count")
+            ax.set_ylabel("count", fontsize=16)
 
         title_parts: List[str] = []
         if labels is not None and j < len(labels):
             title_parts.append(str(labels[j]))
         else:
             title_parts.append(f"dim {j}")
+        ax.set_title("\n".join(title_parts), fontsize=16)
+
         if ks_pvals is not None and j < len(ks_pvals):
-            title_parts.append(f"KS p={float(ks_pvals[j]):.3g}")
-        ax.set_title("\n".join(title_parts), fontsize=10)
+            ax.text(
+                0.95,
+                0.95,
+                f"KS p={float(ks_pvals[j]):.3g}",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=12,
+                bbox=dict(
+                    boxstyle="round,pad=0.3",
+                    facecolor="white",
+                    edgecolor="none",
+                    alpha=0.85,
+                ),
+                zorder=4,
+            )
 
     fig.tight_layout()
     if output_path is not None:
