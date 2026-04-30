@@ -23,6 +23,7 @@ datasets/*/*.p
 */dw/*
 */sir/*
 */lotka_volterra/*
+/papers
 
 
 .DS_Store
