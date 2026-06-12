@@ -1,0 +1,45 @@
+version: "0.0.10"
+name: "BNRE HMC Sinusoid Compatibility POC"
+narrative:
+  summary: |
+    Proof-of-concept wrapper showing that the existing sinusoid BNRE+HMC
+    workflow can be represented as an ASTRA/Lightcone-compatible analysis.
+  methods: |
+    The [run_profile](#decisions.run_profile) decision selects either a
+    smoke-scale plumbing run or the canonical sinusoid workflow. Both profiles
+    call the existing training, HMC, diagnostics, and report entry points.
+  inputs: |
+    The [sinusoid_dataset](#inputs.sinusoid_dataset) input is the unmasked
+    sinusoid HDF5 benchmark dataset used by the existing sinusoid workflow.
+  outputs: |
+    The [analysis_bundle](#outputs.analysis_bundle) output contains copied
+    summaries and the generated markdown report from the completed Hydra run.
+
+inputs:
+  - id: sinusoid_dataset
+    type: data
+    source: ../datasets/sinusoid/sinusoid_noisy_no_masks.h5
+    description: "Unmasked sinusoid HDF5 benchmark dataset."
+
+outputs:
+  - id: analysis_bundle
+    type: data
+    description: |
+      Bundle of copied machine-readable summaries, report, and run-directory
+      pointer for the existing sinusoid BNRE+HMC workflow.
+    decisions: [run_profile]
+    recipe:
+      command: bash scripts/run_sinusoid_poc.sh {output} {decisions.run_profile}
+
+decisions:
+  run_profile:
+    label: "Run Profile"
+    rationale: "Smoke mode validates compatibility quickly; canonical mode preserves the existing workflow scale."
+    default: smoke
+    options:
+      smoke:
+        label: "Smoke test"
+        description: "Tiny non-scientific run for validating ASTRA/Lightcone wiring."
+      canonical:
+        label: "Canonical workflow"
+        description: "Existing sinusoid workflow with default training and HMC settings."

@@ -1,0 +1,5 @@
+id: baseline
+description: "Canonical sinusoid BNRE+HMC workflow."
+
+decisions:
+  run_profile: canonical

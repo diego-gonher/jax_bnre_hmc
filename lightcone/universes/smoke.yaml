@@ -1,0 +1,5 @@
+id: smoke
+description: "Tiny non-scientific run for validating ASTRA/Lightcone wiring."
+
+decisions:
+  run_profile: smoke

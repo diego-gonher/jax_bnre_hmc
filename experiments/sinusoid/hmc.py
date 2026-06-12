@@ -139,7 +139,10 @@ def main(cfg: DictConfig):
             log_ratio = make_log_ratio_fn(model.apply, params, x_obs_i)
             potential = make_potential_fn(log_ratio, prior)
             D = prior.low.shape[0]
-            init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
+            if num_chains == 1:
+                init_z = jnp.zeros((D,), dtype=jnp.float64)
+            else:
+                init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
             mcmc = run_nuts(
                 potential,
                 jax.random.PRNGKey(seed + i),

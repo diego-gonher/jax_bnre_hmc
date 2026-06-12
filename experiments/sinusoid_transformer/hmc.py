@@ -167,7 +167,10 @@ def main(cfg: DictConfig):
             if not bool(jnp.all(jnp.isfinite(test_grad))):
                 raise ValueError(f"Non-finite log_ratio gradient for observation {i}")
             D = prior.low.shape[0]
-            init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
+            if num_chains == 1:
+                init_z = jnp.zeros((D,), dtype=jnp.float64)
+            else:
+                init_z = jnp.zeros((num_chains, D), dtype=jnp.float64)
             mcmc = run_nuts(
                 potential_fn=potential,
                 rng_key=jax.random.PRNGKey(seed + i),
